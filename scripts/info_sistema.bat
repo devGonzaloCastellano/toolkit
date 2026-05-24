@@ -101,11 +101,11 @@ if %RAM_VIDEO_MB% lss 0 set "RAM_VIDEO_MB=0"
 set /a "RAM_VIDEO_GB=(%RAM_VIDEO_MB%+512)/1024"
 
 :: Resumen general
-call :PRINT "  Fisica Real:     %RAM_FISICA_GB% GB  (%RAM_FISICA_MB% MB)"
-call :PRINT "  Reservada GPU:   %RAM_VIDEO_GB% GB  (%RAM_VIDEO_MB% MB)"
-call :PRINT "  Total Sistema:   %RAM_TOTAL_GB% GB  (%RAM_TOTAL_MB% MB)"
-call :PRINT "  Usada:           %RAM_USADA_GB% GB  (%RAM_USADA_MB% MB)"
-call :PRINT "  Libre:           %RAM_LIBRE_GB% GB  (%RAM_LIBRE_MB% MB)"
+call :PRINT "  Fisica Real:      %RAM_FISICA_GB% GB  (%RAM_FISICA_MB% MB)"
+call :PRINT "  Reservada GPU:    %RAM_VIDEO_GB% GB  (%RAM_VIDEO_MB% MB)"
+call :PRINT "  Total Sistema:    %RAM_TOTAL_GB% GB  (%RAM_TOTAL_MB% MB)"
+call :PRINT "  Usada:            %RAM_USADA_GB% GB  (%RAM_USADA_MB% MB)"
+call :PRINT "  Libre:            %RAM_LIBRE_GB% GB  (%RAM_LIBRE_MB% MB)"
 call :NEWLINE
 
 :: Detalle por modulo:
