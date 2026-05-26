@@ -16,23 +16,28 @@ if %errorLevel% neq 0 (
 :: ----------------------------------------
 :: Timestamp via PowerShell
 :: ----------------------------------------
-for /f %%a in ('PowerShell -NoProfile -Command "Get-Date -Format yyyy-MM-dd_HH-mm"') do set "TIMESTAMP=%%a"
+for /f %%a in ('powershell -NoProfile -Command "Get-Date -Format yyyy-MM-dd_HH-mm"') do set "TIMESTAMP=%%a"
+for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "Get-Date -Format 'dd/MM/yyyy HH:mm:ss'"`) do set "FECHAHORA=%%a"
 set "LOGFILE=%~dp0..\logs\reparacion_red_%TIMESTAMP%.txt"
+
 
 if not exist "%~dp0..\logs" mkdir "%~dp0..\logs"
 if exist "%LOGFILE%" del "%LOGFILE%"
+
+:: ----------------------------------------
+:: Encabezado del log
+:: ----------------------------------------
+echo ==========================================  >> "%LOGFILE%"
+echo    REPARACION DE RED                       >> "%LOGFILE%"
+echo    Inicio: %FECHAHORA%                     >> "%LOGFILE%"
+echo ==========================================  >> "%LOGFILE%"
+echo.                                           >> "%LOGFILE%"
 
 echo.
 echo  ==========================================
 echo    REPARACION DE RED
 echo  ==========================================
 echo.
-
-echo ==========================================  >> "%LOGFILE%"
-echo    REPARACION DE RED                       >> "%LOGFILE%"
-echo ==========================================  >> "%LOGFILE%"
-echo    Inicio: %date% %time%                   >> "%LOGFILE%"
-echo.                                           >> "%LOGFILE%"
 
 :: ==========================================
 :: ESTADO ANTES de reparar
@@ -52,8 +57,8 @@ for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /i "IPv4"') do (
     )
 )
 
-:: Gateway (via PowerShell para evitar IPv6 y duplicados)
-for /f %%a in ('PowerShell -NoProfile -Command "(Get-NetRoute -DestinationPrefix 0.0.0.0/0 | Sort-Object RouteMetric | Select-Object -First 1).NextHop" 2^>nul') do (
+:: Gateway via PowerShell para evitar IPv6 y duplicados
+for /f %%a in ('powershell -NoProfile -Command "(Get-NetRoute -DestinationPrefix 0.0.0.0/0 | Sort-Object RouteMetric | Select-Object -First 1).NextHop" 2^>nul') do (
     echo   Gateway:      %%a
     echo   Gateway:      %%a >> "%LOGFILE%"
 )
@@ -84,7 +89,9 @@ echo  incorrectas guardadas, esto las elimina.
 echo.
 
 echo [1/5] Flush DNS >> "%LOGFILE%"
+chcp 437 >nul
 ipconfig /flushdns >> "%LOGFILE%" 2>&1
+chcp 65001 >nul
 echo   OK.
 echo.
 
@@ -100,8 +107,10 @@ echo  no obtiene direccion automaticamente.
 echo.
 
 echo [2/5] Release y Renew >> "%LOGFILE%"
+chcp 437 >nul
 ipconfig /release >> "%LOGFILE%" 2>&1
 ipconfig /renew >> "%LOGFILE%" 2>&1
+chcp 65001 >nul
 echo   OK.
 echo.
 
@@ -118,7 +127,9 @@ echo  Este reset lo devuelve a estado limpio.
 echo.
 
 echo [3/5] Winsock Reset >> "%LOGFILE%"
+chcp 1252 >nul
 netsh winsock reset >> "%LOGFILE%" 2>&1
+chcp 65001 >nul
 echo   OK.
 echo.
 
@@ -134,7 +145,9 @@ echo  reset de Winsock, afecta toda la pila de red.
 echo.
 
 echo [4/5] TCP/IP Reset >> "%LOGFILE%"
+chcp 1252 >nul
 netsh int ip reset >> "%LOGFILE%" 2>&1
+chcp 65001 >nul
 echo   OK.
 echo.
 
@@ -150,9 +163,12 @@ echo  Esto lo elimina y restaura conexion directa.
 echo.
 
 echo [5/5] Reset Proxy >> "%LOGFILE%"
+chcp 1252 >nul
 netsh winhttp reset proxy >> "%LOGFILE%" 2>&1
-reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyEnable /f >> "%LOGFILE%" 2>&1
-reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyServer /f >> "%LOGFILE%" 2>&1
+chcp 65001 >nul
+:: Las claves de proxy pueden no existir en todos los equipos, se descartan los errores
+reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyEnable /f >nul 2>&1
+reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyServer /f >nul 2>&1
 echo   OK.
 echo.
 
@@ -186,11 +202,13 @@ if %errorLevel%==0 (
 )
 
 :: ==========================================
-:: RESUMEN
+:: Timestamp de cierre y resumen
 :: ==========================================
+for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "Get-Date -Format 'dd/MM/yyyy HH:mm:ss'"`) do set "FECHAHORA_FIN=%%a"
+
 echo.
 echo ==========================================  >> "%LOGFILE%"
-echo    FIN: %date% %time%                      >> "%LOGFILE%"
+echo    FIN: %FECHAHORA_FIN%                    >> "%LOGFILE%"
 echo ==========================================  >> "%LOGFILE%"
 
 echo.
