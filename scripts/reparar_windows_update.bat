@@ -16,7 +16,8 @@ if %errorLevel% neq 0 (
 :: ----------------------------------------
 :: Timestamp via PowerShell
 :: ----------------------------------------
-for /f %%a in ('PowerShell -NoProfile -Command "Get-Date -Format yyyy-MM-dd_HH-mm"') do set "TIMESTAMP=%%a"
+for /f %%a in ('powershell -NoProfile -Command "Get-Date -Format yyyy-MM-dd_HH-mm"') do set "TIMESTAMP=%%a"
+for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "Get-Date -Format 'dd/MM/yyyy HH:mm:ss'"`) do set "FECHAHORA=%%a"
 set "LOGFILE=%~dp0..\logs\reparacion_update_%TIMESTAMP%.txt"
 
 if not exist "%~dp0..\logs" mkdir "%~dp0..\logs"
@@ -29,10 +30,10 @@ echo  ==========================================
 echo.
 
 echo ==========================================  >> "%LOGFILE%"
-echo    REPARACION DE WINDOWS UPDATE            >> "%LOGFILE%"
+echo    REPARACION DE WINDOWS UPDATE             >> "%LOGFILE%"
 echo ==========================================  >> "%LOGFILE%"
-echo    Inicio: %date% %time%                   >> "%LOGFILE%"
-echo.                                           >> "%LOGFILE%"
+echo    Inicio: %FECHAHORA%                      >> "%LOGFILE%"
+echo.                                            >> "%LOGFILE%"
 
 :: ==========================================
 :: PASO 1: Detener servicios de Windows Update
@@ -46,11 +47,12 @@ echo  Si no, Windows los regenera al instante.
 echo.
 
 echo [1/6] Deteniendo servicios >> "%LOGFILE%"
-
+chcp 1252 >nul
 net stop wuauserv >> "%LOGFILE%" 2>&1
 net stop cryptSvc >> "%LOGFILE%" 2>&1
 net stop bits >> "%LOGFILE%" 2>&1
 net stop msiserver >> "%LOGFILE%" 2>&1
+chcp 65001 >nul
 
 echo   OK - servicios detenidos.
 echo.
@@ -107,9 +109,9 @@ echo.
 
 echo [3/6] Limpiando registro >> "%LOGFILE%"
 
-reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate" /v AccountDomainSid /f >> "%LOGFILE%" 2>&1
-reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate" /v PingID /f >> "%LOGFILE%" 2>&1
-reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate" /v SusClientId /f >> "%LOGFILE%" 2>&1
+reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate" /v AccountDomainSid /f >> "%LOGFILE%" >nul 2>&1
+reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate" /v PingID /f >> "%LOGFILE%" >nul 2>&1
+reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate" /v SusClientId /f >> "%LOGFILE%" >nul 2>&1
 
 echo   OK.
 echo.
@@ -127,8 +129,10 @@ echo.
 
 echo [4/6] Reset de red >> "%LOGFILE%"
 
+chcp 1252 >nul
 netsh winsock reset >> "%LOGFILE%" 2>&1
 netsh winhttp reset proxy >> "%LOGFILE%" 2>&1
+chcp 65001 >nul
 
 echo   OK.
 echo.
@@ -144,11 +148,12 @@ echo  carpetas no existen y las recrea limpias.
 echo.
 
 echo [5/6] Reiniciando servicios >> "%LOGFILE%"
-
+chcp 1252 >nul
 net start wuauserv >> "%LOGFILE%" 2>&1
 net start cryptSvc >> "%LOGFILE%" 2>&1
 net start bits >> "%LOGFILE%" 2>&1
 net start msiserver >> "%LOGFILE%" 2>&1
+chcp 65001 >nul
 
 echo   OK - servicios reiniciados.
 echo.
@@ -188,8 +193,10 @@ echo.
 :: ==========================================
 :: RESUMEN
 :: ==========================================
+for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "Get-Date -Format 'dd/MM/yyyy HH:mm:ss'"`) do set "FECHAHORA_FIN=%%a"
+
 echo ==========================================  >> "%LOGFILE%"
-echo    FIN: %date% %time%                      >> "%LOGFILE%"
+echo    FIN: %FECHAHORA_FIN%                     >> "%LOGFILE%"
 echo ==========================================  >> "%LOGFILE%"
 
 echo.
