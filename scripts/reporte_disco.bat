@@ -24,7 +24,11 @@ if not exist "%~dp0..\logs" mkdir "%~dp0..\logs"
 if exist "%LOGFILE%" del "%LOGFILE%"
 
 echo.
-echo  Analizando discos... esto puede tardar unos segundos.
+echo  Analizando discos... esto puede tardar unos minutos.
+echo.
+echo ==========================================
+echo    REPORTE DE DISCO"
+echo ==========================================
 echo.
 
 echo ==========================================  >> "%LOGFILE%"
@@ -32,11 +36,6 @@ echo    REPORTE DE DISCO                         >> "%LOGFILE%"
 echo    Inicio: %FECHAHORA%                      >> "%LOGFILE%"
 echo ==========================================  >> "%LOGFILE%"
 echo.                                            >> "%LOGFILE%"
-
-call :PRINT "=========================================="
-call :PRINT "   REPORTE DE DISCO"
-call :PRINT "=========================================="
-call :NEWLINE
 
 :: ==========================================
 :: SECCION 1: chkdsk - solo al log, sin findstr
@@ -95,12 +94,9 @@ call :PRINT "   FIN DEL REPORTE"
 call :PRINT "=========================================="
 
 for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "Get-Date -Format 'dd/MM/yyyy HH:mm:ss'"`) do set "FECHAHORA_FIN=%%a"
-echo.
-echo  ==========================================
-echo  Reporte completado.
-echo  FIN: %FECHAHORA_FIN%                    >> "%LOGFILE%"
-echo  Log: %LOGFILE%
-echo  ==========================================
+echo ==========================================  >> "%LOGFILE%"
+echo    FIN: %FECHAHORA_FIN%                    >> "%LOGFILE%"
+echo ==========================================  >> "%LOGFILE%"
 echo.
 pause
 endlocal
