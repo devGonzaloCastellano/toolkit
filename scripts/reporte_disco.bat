@@ -16,7 +16,8 @@ if %errorLevel% neq 0 (
 :: ----------------------------------------
 :: Timestamp via PowerShell
 :: ----------------------------------------
-for /f %%a in ('PowerShell -NoProfile -Command "Get-Date -Format yyyy-MM-dd_HH-mm"') do set "TIMESTAMP=%%a"
+for /f %%a in ('powershell -NoProfile -Command "Get-Date -Format yyyy-MM-dd_HH-mm"') do set "TIMESTAMP=%%a"
+for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "Get-Date -Format 'dd/MM/yyyy HH:mm:ss'"`) do set "FECHAHORA=%%a"
 set "LOGFILE=%~dp0..\logs\reporte_disco_%TIMESTAMP%.txt"
 
 if not exist "%~dp0..\logs" mkdir "%~dp0..\logs"
@@ -26,58 +27,19 @@ echo.
 echo  Analizando discos... esto puede tardar unos segundos.
 echo.
 
+echo ==========================================  >> "%LOGFILE%"
+echo    REPORTE DE DISCO                         >> "%LOGFILE%"
+echo    Inicio: %FECHAHORA%                      >> "%LOGFILE%"
+echo ==========================================  >> "%LOGFILE%"
+echo.                                            >> "%LOGFILE%"
+
 call :PRINT "=========================================="
 call :PRINT "   REPORTE DE DISCO"
 call :PRINT "=========================================="
 call :NEWLINE
 
 :: ==========================================
-:: SECCION 1: Discos fisicos
-:: (capacidad via PowerShell para evitar overflow de 32 bits)
-:: ==========================================
-call :PRINT "[DISCOS FISICOS]"
-call :PRINT "  (SMART: OK = sano / Pred Fail = fallo inminente)"
-call :NEWLINE
-
-for /f "usebackq tokens=1,2,3,4 delims=|" %%a in (`PowerShell -NoProfile -Command ^
-    "Get-WmiObject Win32_DiskDrive | ForEach-Object { $gb=[math]::Round($_.Size/1GB,1); '{0}|{1}|{2}|{3}' -f $_.Index, $_.Model.Trim(), $gb, $_.InterfaceType }" 2^>nul`) do (
-    call :PRINT "  Disco %%a:      %%b"
-    call :PRINT "  Capacidad:     %%c GB"
-    call :PRINT "  Interfaz:      %%d"
-
-    :: Estado SMART via wmic (mas confiable para esto)
-    for /f "tokens=2 delims==" %%s in ('wmic diskdrive where "Index=%%a" get Status /value 2^>nul') do (
-        if not "%%s"=="" call :PRINT "  Estado SMART:  %%s"
-    )
-    call :NEWLINE
-)
-
-:: ==========================================
-:: SECCION 2: Particiones con espacio y porcentaje
-:: (tokens=1,2,3,4,5 para capturar el 5to valor = porcentaje)
-:: ==========================================
-call :PRINT "[PARTICIONES]"
-call :NEWLINE
-
-for /f "usebackq tokens=1,2,3,4,5 delims=|" %%a in (`PowerShell -NoProfile -Command ^
-    "Get-PSDrive -PSProvider FileSystem | Where-Object {$_.Used -ne $null} | ForEach-Object { $total=[math]::Round(($_.Used+$_.Free)/1GB,1); $usado=[math]::Round($_.Used/1GB,1); $libre=[math]::Round($_.Free/1GB,1); $pct=[math]::Round($_.Used/($_.Used+$_.Free)*100,0); '{0}|{1}|{2}|{3}|{4}' -f $_.Name,$total,$usado,$libre,$pct }" 2^>nul`) do (
-    if not "%%a"=="" (
-        call :PRINT "  Unidad %%a:"
-        call :PRINT "    Total:     %%b GB"
-        call :PRINT "    Usado:     %%c GB"
-        call :PRINT "    Libre:     %%d GB"
-        if not "%%e"=="" (
-            call :PRINT "    Uso:       %%e%%"
-            if %%e GEQ 90 call :PRINT "    ATENCION:  disco casi lleno ^(+90%%^)"
-        ) else (
-            call :PRINT "    Uso:       0%%"
-        )
-        call :NEWLINE
-    )
-)
-
-:: ==========================================
-:: SECCION 3: chkdsk - solo al log, sin findstr
+:: SECCION 1: chkdsk - solo al log, sin findstr
 :: ==========================================
 call :PRINT "[VERIFICACION DE ERRORES - CHKDSK]"
 call :PRINT "  Modo lectura: no modifica nada, solo reporta."
@@ -85,21 +47,38 @@ call :NEWLINE
 
 for /f "usebackq tokens=1 delims=|" %%a in (`PowerShell -NoProfile -Command ^
     "Get-PSDrive -PSProvider FileSystem | Where-Object {$_.Used -ne $null} | ForEach-Object { $_.Name }" 2^>nul`) do (
+
     call :PRINT "  --- Unidad %%a: ---"
-    echo  Verificando unidad %%a:...
+
+    :: Guardamos el progreso en un archivo temporal para poder filtrar el ruido después
+    echo Verificando unidad %%a:...
+    echo  Este proceso puede tardar varios minutos en HDDs.
+    echo  El programa sigue corriendo en segundo plano.
+    echo  Por favor no cerrar esta ventana.
     echo --- chkdsk %%a: --- >> "%LOGFILE%"
-    chkdsk %%a: >> "%LOGFILE%" 2>&1
+
+    chkdsk %%a: > "%TEMP%\chkdsk_tmp.txt" 2>&1
     set "CHKDSK_EXIT=!errorLevel!"
-    if !CHKDSK_EXIT!==0 (
-        call :PRINT "  Sin errores detectados."
-    ) else (
-        call :PRINT "  Se detectaron advertencias. Ver log para detalle."
-    )
+
+    :: Filtramos el archivo temporal: solo guardamos las líneas importantes en el log real
+    type "%TEMP%\chkdsk_tmp.txt" | findstr /i /c:"error" /c:"dañado" /c:"reparar" /c:"problema" /c:"sectores" /c:"encontró" /c:"Windows comprobó el sistema de archivos" >> "%LOGFILE%"
+    del "%TEMP%\chkdsk_tmp.txt" 2>nul
+
+   :: Reporte en la consola basado en el ErrorLevel de CHKDSK
+   if !CHKDSK_EXIT!==0 (
+       call :PRINT "  [OK] %%a: Sin errores detectados."
+   ) else if !CHKDSK_EXIT!==1 (
+       call :PRINT "  [OK] %%a: Se encontraron errores menores de formato y se arreglaron (Modo lectura)."
+   ) else (
+       call :PRINT "  [ALERTA] Se detectaron problemas en %%a:."
+       call :PRINT "  Nota: En la unidad del sistema esto suele ser un falso positivo por estar en uso."
+       call :PRINT "  Se sugiere ejecutar de forma manual: chkdsk %%a: /scan /forceofflinefix"
+   )
     call :NEWLINE
 )
 
 :: ==========================================
-:: SECCION 4: Carpetas mas pesadas en C:\
+:: SECCION 2: Carpetas mas pesadas en C:\
 :: ==========================================
 call :PRINT "[CARPETAS MAS PESADAS EN C:\]"
 call :PRINT "  Top 10 por tamanio:"
@@ -115,9 +94,11 @@ call :PRINT "=========================================="
 call :PRINT "   FIN DEL REPORTE"
 call :PRINT "=========================================="
 
+for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "Get-Date -Format 'dd/MM/yyyy HH:mm:ss'"`) do set "FECHAHORA_FIN=%%a"
 echo.
 echo  ==========================================
 echo  Reporte completado.
+echo  FIN: %FECHAHORA_FIN%                    >> "%LOGFILE%"
 echo  Log: %LOGFILE%
 echo  ==========================================
 echo.
