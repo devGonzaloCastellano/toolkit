@@ -112,7 +112,7 @@ Los logs se almacenan automáticamente dentro de:
 
 ## 🔄 Versionado del proyecto
 
-### Versión 1.0.0 (Actual)
+### Versión 1.0.0 (Finalizada)
  - Toolkit modular funcional
  - Menú centralizado
  - Scripts de diagnóstico
@@ -121,17 +121,20 @@ Los logs se almacenan automáticamente dentro de:
  - Auditoría básica del sistema
  - Generación de logs automáticos
 
-### Versión 1.1.0 (Planificada)
- - Mejoras visuales
- - Mayor feedback en tiempo real
- - Optimización de reportes
- - Validaciones extendidas
- - Limpieza de código y estructura
- - incorporar screenshots
+### Versión 1.1.0 (Actual)
+- info_sistema: build detallado con UBR, último inicio legible,
+- RAM física real, reserva GPU, detalle por módulo,
+- discos con tipo HDD/SSD e interfaz, particiones agrupadas por disco
+- limpieza: agrega log con conteo de archivos, duración y espacio liberado
+- reparar_red: timestamp via PowerShell, errores de registro suprimidos
+- reparar_windows_update: timestamp via PowerShell, errores de registro suprimidos
+- reporte_disco: suprimido ruido visual en log de chkdsk, nota de falso positivo
+- Timestamp de logs migrado a PowerShell en todos los scripts afectados
 
 ### Versión 2.0.0 (Planificada)
-Migración parcial a PowerShell
+Migración de mic a PowerShell
 Exportación HTML/PDF
+Encoding de net, ipconfig y chkdsk en logs
 Informes simplificados para clientes
 Detección inteligente de problemas
 Mejoras de UX/UI
@@ -186,7 +189,23 @@ con el objetivo de consolidar conocimientos en:
 
 ## 📷 Screenshots
 
-Próximamente se agregarán capturas del toolkit en funcionamiento.
+### Menú principal
+![Menu principal](img/menu.jpg)
+
+### Información del sistema
+![Informacion del sistema](img/informacion.jpg)
+
+### Limpieza de sistema
+![Limpieza de sistema](img/limpieza.jpg)
+
+### Reparación de red
+![Reparacion de red](img/reparacion_red.jpg)
+
+### Usuarios del sistema
+![Usuarios del sistema](img/usuarios.jpg)
+
+### God Mode
+![God Mode](img/god_mode.jpg)
 
 ---
 
