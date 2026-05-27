@@ -132,12 +132,12 @@ Los logs se almacenan automáticamente dentro de:
 - Timestamp de logs migrado a PowerShell en todos los scripts afectados
 
 ### Versión 2.0.0 (Planificada)
-Migración de mic a PowerShell
-Exportación HTML/PDF
-Encoding de net, ipconfig y chkdsk en logs
-Informes simplificados para clientes
-Detección inteligente de problemas
-Mejoras de UX/UI
+- Migración de mic a PowerShell
+- Exportación HTML/PDF
+- Encoding de net, ipconfig y chkdsk en logs
+- Informes simplificados para clientes
+- Detección inteligente de problemas
+- Mejoras de UX/UI
 ---
 
 ## 🧪 Testing
