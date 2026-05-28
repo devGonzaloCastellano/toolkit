@@ -14,12 +14,7 @@
 
 #region CONFIGURACION DE COLORES POR NIVEL
 
-$script:LogColors = @{
-    INFO    = "White"
-    SUCCESS = "Green"
-    WARNING = "Yellow"
-    ERROR   = "Red"
-}
+
 
 #endregion
 
@@ -51,9 +46,16 @@ function Write-Log {
         [string]$LogFile
     )
 
+    $colorMap = @{
+        INFO    = "White"
+        SUCCESS = "Green"
+        WARNING = "Yellow"
+        ERROR   = "Red"
+    }
+
     $timestamp = Get-Date -Format "HH:mm:ss"
     $line      = "[{0}] [{1}] {2}" -f $timestamp, $Level, $Message
-    $color     = $script:LogColors[$Level]
+    $color     = $colorMap[$Level]
 
     Write-Host $line -ForegroundColor $color
 
