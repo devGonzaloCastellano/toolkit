@@ -35,7 +35,7 @@ if (-not $NoElevation) {
 
 #region CONFIGURACION VISUAL
 
-$Host.UI.RawUI.BackgroundColor = "DarkBlue"
+$Host.UI.RawUI.BackgroundColor = "Black"
 $Host.UI.RawUI.ForegroundColor = "White"
 Clear-Host
 
