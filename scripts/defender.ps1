@@ -73,7 +73,7 @@ function Show-DefenderStatus {
     $ultimoRapido = if ($Status.QuickScanAge -eq 0) { "Hoy" } else { "Hace $($Status.QuickScanAge) dias" }
     $ultimoEscaneo = if ($Status.FullScanAge -ge 4294967295) { "Nunca" } `
                  elseif ($Status.FullScanAge -eq 0) { "Hoy" } `
-                 else { "Hace $($Status.FullScanAge) dias" }
+                 else { "Hace $($Status.FullScanAge) dias" }cls
 
     Write-Log "Proteccion en tiempo real : $($Status.RealTimeProtectionEnabled)" -LogFile $LogFile
     Write-Log "Antivirus habilitado      : $($Status.AntivirusEnabled)"          -LogFile $LogFile
