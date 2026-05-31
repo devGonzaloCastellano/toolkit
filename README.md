@@ -1,116 +1,227 @@
 # Portable Windows Toolkit
 
-Toolkit portable desarrollado en Batch y PowerShell para tareas de:
+Toolkit portable desarrollado en PowerShell para tareas de:
 
 - diagnóstico
 - mantenimiento
 - reparación
-- auditoría básica
+- auditoría de seguridad
 - soporte técnico Windows
 
-El proyecto fue diseñado con un enfoque modular y portable,
+Diseñado con un enfoque modular y portable, 
 pensado para asistencia técnica y troubleshooting en entornos Windows.
 
-Actualmente el sistema se encuentra en su Versión 1 (v1.0.0).
+Actualmente, el sistema se encuentra en su Versión 2 (v2.0.0).
 
 ---
 
-## 🚀 Tecnologías utilizadas
 
-- Batch (CMD)
-- PowerShell
-- Git / GitHub
-
----
-
-## 🧩 Estructura del proyecto
-
-```text
-toolkit/
-├── menu.bat
-├── scripts/
-└── logs/
-```
-
-La estructura está pensada para facilitar:
- - mantenibilidad
- - modularidad
- - portabilidad
- - escalabilidad futura
----
 
 ## ⚡ Uso rápido
 1. Clonar o descargar el repositorio
-2. Ejecutar `menu.bat` como administrador
+2. Ejecutar `launcher.bat` como administrador
 3. Seleccionar la opción deseada desde el menú
+
+> El launcher solicita elevacion UAC automaticamente.
+> Todos los modulos corren en la misma ventana de PowerShell.
 ---
 
-## 🔧 Funcionalidades
+## Funcionalidades
 
 ### 🖥 Diagnóstico del sistema
-- Información general del sistema
-- Estado de discos físicos
-- Verificación SMART
-- Uso de CPU y RAM
-- Procesos activos
-- Servicios del sistema
-- Información de usuarios y sesiones
+- Información completa de hardware y software
+- CPU con temperatura (si el fabricante la expone)
+- RAM física real vs disponible para el SO (incluye memoria reservada por GPU integrada)
+- Detalle por módulo RAM (slot, modelo, fabricante, velocidad)
+- GPU con VRAM, resolución y versión de driver
+- Batería con nivel y estado (en notebooks)
+- Discos físicos con estado SMART
+- Particiones con porcentaje de uso y alertas
+- Red: IP, MAC, gateway, DNS
+- Servicios críticos: Defender, Firewall, Windows Update
+- Diagnostico general con semáforo visual al final
+- Estado del disco con chkdsk y top 10 carpetas más pesadas
+- Procesos agrupados con clasificación por origen y nivel de riesgo
 
 ### 🌐 Red y conectividad
-- Reparación de red automática
-- Flush DNS
-- Reset Winsock
-- Reset TCP/IP
-- Limpieza de proxy
-- Auditoría de conexiones activas
-- Análisis de puertos
-- Mapa de red local
+- Reparación de red automática (flush DNS, reset IP, Winsock, TCP/IP, proxy)
+- Mapa de red local con escaneo de dispositivos via ping paralelo
+- Tabla ARP con dispositivos recientes
+- Auditoria de puertos con clasificación de riesgo por puerto y proceso
 
 ### 👥 Auditoría y seguridad
-- Usuarios locales
-- Grupos administrativos
+- Usuarios locales con último login
+- Grupos y miembros (con alerta para Administradores)
 - Sesiones activas
-- Procesos sospechosos
-- Servicios innecesarios
-- Revisión básica de seguridad
+- Últimos 10 inicios de sesión del log de seguridad
+- Puertos en escucha con detección de puertos de riesgo conocidos
+- Conexiones a internet agrupadas por proceso
+- Servicios innecesarios (telemetría, Xbox, raramente usados)
+- Programas al inicio desde registro, carpetas y Programador de Tareas
 
 ### 🧹 Mantenimiento y optimización
-- Limpieza de archivos temporales
-- Optimización básica del sistema
-- Reparaciones comunes Windows
-- Generación automática de logs
+- Limpieza de temporales (usuario, sistema, recientes, cache WU)
+- Limpieza de Prefetch opcional con explicación del impacto
+- Flush DNS y vaciado de papelera
+- Disk Cleanup automatizado
+- Conteo de items eliminados y espacio liberado
+
+### Reparación
+- SFC y DISM con progreso en tiempo real y tiempo transcurrido
+- Reparación de Windows Update (servicios, cache, registro, DLLs)
+- Reparación de red con díagnostico antes y después
+
+### Utilidades
+- God Mode en el Escritorio
+- Actualización de Windows Defender con escaneo rápido y completo opcionales
+
 ---
 
-## 📌 Filosofía del proyecto
+## Screenshots
 
-El proyecto busca no solo automatizar tareas,
-sino también explicar y contextualizar las acciones realizadas,
-priorizando:
+<table>
+  <tr>
+    <td align="center">
+      <a href="img/menu.jpg"><img src="img/menu.jpg" width="380"/></a>
+      <br/><sub>Menu principal</sub>
+    </td>
+    <td align="center">
+      <a href="img/info_sistema.jpg"><img src="img/info_sistema.jpg" width="380"/></a>
+      <br/><sub>Informacion del sistema y diagnostico</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="img/puertos.jpg"><img src="img/puertos.jpg" width="380"/></a>
+      <br/><sub>Puertos y conexiones activas</sub>
+    </td>
+    <td align="center">
+      <a href="img/reparacion_red.jpg"><img src="img/reparacion_red.jpg" width="380"/></a>
+      <br/><sub>Reparacion de red</sub>
+    </td>
+  </tr>
+</table>
 
- - claridad
- - diagnóstico 
- - aprendizaje técnico
- - troubleshooting
- - experiencia de uso
+---
+## Arquitectura del proyecto
 
-Cada módulo intenta ofrecer información entendible tanto para el técnico
-como para usuarios con menor conocimiento técnico.
+### Estructura 
+
+```text
+toolkit/
+|-- launcher.bat
+|-- menu.ps1
+|-- lib/
+|   `-- Utils.ps1
+|-- scripts/
+|   |-- defender.ps1
+|   |-- godmode.ps1
+|   |-- info_sistema.ps1
+|   |-- mapa_red.ps1
+|   |-- limpieza.ps1
+|   |-- procesos.ps1
+|   |-- puertos.ps1
+|   |-- reparar_red.ps1
+|   |-- reparar_sistema.ps1
+|   |-- reparar_windows_update.ps1
+|   |-- reporte_disco.ps1
+|   |-- servicios.ps1
+|   |-- startup.ps1
+|   `-- usuarios.ps1
+`-- logs/
+```
+La estructura está pensada para facilitar:
+- mantenibilidad
+- modularidad
+- portabilidad
+- escalabilidad futura
+
+### lib/Utils.ps1
+Modulo compartido importado via dot-sourcing por todos los scripts.
+Provee: `Write-Log`, `Write-Blank`, `Write-Section`, `Initialize-Environment`,
+`Test-IsAdmin`, `Invoke-Elevate`, `Format-Bytes`, `Invoke-Pause`.
+
+### launcher.bat
+Unico archivo `.bat` del proyecto. Su unico trabajo es elevar PowerShell
+y lanzar `menu.ps1`. Toda la logica vive en los scripts `.ps1`.
+
+### Plantilla de modúlo
+Cada script sigue la misma estructura:
+```
+SYNOPSIS / DESCRIPTION / NOTES
+PARAMETROS      ($LogDir, $NoElevation)
+IMPORTS         (dot-sourcing de Utils.ps1)
+AUTO-ELEVACION
+INICIALIZACION  (Initialize-Environment)
+DATOS           (Get-CimInstance, etc. - separado de la presentacion)
+LOGICA/PRESENTACION
+RESUMEN
+```
+
+
 ---
 
-## 📄 Reportes y logs
-El toolkit genera logs automáticos por módulo ejecutado,
-permitiendo:
+## Compatibilidad
 
- - auditoría básica 
- - historial de mantenimiento 
- - análisis posterior
- - generación futura de informes técnicos para clientes
+- Windows 10 / 11
+- PowerShell 5.1 (incluido en Windows por defecto)
+- PowerShell 7+ (usa funcionalidades mejoradas cuando está disponible,
+  como ForEach-Object -Parallel en mapa_red.ps1)
 
-Los logs se almacenan automáticamente dentro de:
-/logs
 ---
 
-## 🔄 Versionado del proyecto
+## Seguridad y Elevación de Privilegios
+El toolkit cuenta con un sistema de **auto-elevación de privilegios**.
+Al ejecutarse, el script verifica si cuenta con permisos de administrador; de no ser así, solicitará acceso mediante UAC (User Account Control) utilizando PowerShell.
+
+**¿Por qué requiere permisos?**
+- Modificación y reparación de interfaces de red (`netsh`).
+- Consulta de información de hardware profunda (`wmic` / `CIM`).
+- Gestión de servicios críticos del sistema.
+- Limpieza de archivos temporales en directorios protegidos.
+---
+
+## Logs
+
+Cada modúlo genera un log automatico en `/logs` con timestamp:
+```
+logs/
+|-- info_sistema_2026-05-31_10-57.txt
+|-- reporte_disco_2026-05-31_09-50.txt
+`-- ...
+```
+
+El log contiene el mismo output que la consola, sin colores ANSI.
+
+---
+
+## Limitaciones conocidas
+- La temperatura de CPU depende de que el fabricante exponga el dato
+  via `MSAcpi_ThermalZoneTemperature`. En algunos equipos no está disponible.
+- El conteo de espacio liberado en limpieza no incluye Disk Cleanup,
+  ya que corre en segundo plano de forma asíncrona.
+- El escaneo de red (mapa_red) puede no detectar dispositivos que
+  bloquean ICMP (ping) en firewall.
+- Los eventos de seguridad en `usuarios.ps1` requieren que la auditoria
+  de inicio de sesión está habilitada en el sistema.
+
+---
+
+## Testing
+Las pruebas fueron realizadas manualmente en entornos Windows 10 Pro,
+y en Windows 11 validando:
+
+- ejecución y funcionamiento de cada modúlo
+- generación de logs
+- análisis completo del sistema
+- reparación de red y sistema
+- auditoría de usuarios
+- detección de procesos y servicios
+- clasificación de riesgo en puertos y procesos
+- estabilidad general del toolkit
+---
+
+## Versionado
 
 ### Versión 1.0.0 (Finalizada)
  - Toolkit modular funcional
@@ -130,47 +241,39 @@ Los logs se almacenan automáticamente dentro de:
 - reparar_windows_update: timestamp via PowerShell, errores de registro suprimidos
 - reporte_disco: suprimido ruido visual en log de chkdsk, nota de falso positivo
 - Timestamp de logs migrado a PowerShell en todos los scripts afectados
+- Supresión de ruido visual en logs de chkdsk y reparaciones
 
 ### Versión 2.0.0 (Planificada)
-- Migración de mic a PowerShell
-- Exportación HTML/PDF
-- Encoding de net, ipconfig y chkdsk en logs
-- Informes simplificados para clientes
-- Detección inteligente de problemas
-- Mejoras de UX/UI
+- Migración completa a PowerShell nativo (eliminación de Batch)
+- Modúlo compartido lib/Utils.ps1 con logging por niveles y colores
+- Plantilla uniforme para todos los modulos
+- Clasificación de riesgo en puertos (por puerto, proceso e IP)
+- Clasificación de procesos por origen (sistema, aplicación, desconocido)
+- RAM física real vs reservada por hardware
+- Temperatura de CPU, VRAM, driver GPU, batería
+- Diagnostico general con semáforo visual
+- Uptime legible
+- Detección automática de PS 5.1 vs. PS 7+ para optimización
+- Prefetch con advertencia y confirmación opcional
+- Progreso en tiempo real para SFC, DISM y chkdsk
+
+### Version 2.1.0 (Planificada)
+- Funciones de apagado, reinicio forzado y reinicio a BIOS
+- Exportación de reportes a HTML/PDF
+- Identificación de fabricante por MAC en mapa de red (OUI lookup)
+- Escaneo completo de Defender (ademas del rapido)
+- Encoding de salida de net, ipconfig en logs
+- Distinguir DLLs inexistentes vs DLLs que fallaron el registro en reparar_windows_update
+- Pulido de etiquetas de nivel ([WARN] vs [WARNING]) para alineación visual
+- Agregar procesos conocidos a lista blanca de procesos.ps1
+- Revisar Disk Cleanup en limpieza.ps1
+- Forzar InvariantCulture en todos los valores numéricos para evitar inconsistencia de separador decimal entre equipos con distinta configuración regional
+- Detectar unidades removibles (USB) en reporte_disco y omitir chkdsk o cambiar nivel a INFO para evitar falsos positivos con código 11
+- Detectar IP APIPA (169.254.x.x) en info_sistema y red, mostrar WARNING indicando que no hay conectividad real
+
 ---
 
-## 🧪 Testing
-Las pruebas fueron realizadas manualmente en entornos Windows,
-validando:
-
- - ejecución de scripts
- - generación de logs
- - funcionamiento de módulos
- - reparación de red
- - análisis del sistema
- - auditoría de usuarios
- - detección de procesos y servicios
- - estabilidad general del toolkit
----
-
-## ⚠️ Limitaciones conocidas
-- En Windows 10 con PowerShell 5, las rutas de proceso en el reporte de CPU pueden aparecer sin el prefijo `C:\` por limitaciones del encoding en pipes de batch.
-- El reporte de disco puede tardar varios minutos en HDDs mecánicos.
----
-
-## 🛡️ Seguridad y Elevación de Privilegios
-El toolkit cuenta con un sistema de **auto-elevación de privilegios**.
-Al ejecutarse, el script verifica si cuenta con permisos de administrador; de no ser así, solicitará acceso mediante UAC (User Account Control) utilizando PowerShell.
-
-**¿Por qué requiere permisos?**
-- Modificación y reparación de interfaces de red (`netsh`).
-- Consulta de información de hardware profunda (`wmic` / `CIM`).
-- Gestión de servicios críticos del sistema.
-- Limpieza de archivos temporales en directorios protegidos.
----
-
-## 🧠 Objetivo del proyecto
+## Objetivo del proyecto
 
 Este proyecto fue desarrollado con fines:
  - formativos
@@ -185,32 +288,11 @@ con el objetivo de consolidar conocimientos en:
  - administración básica de sistemas
  - soporte técnico
  - análisis y diagnóstico de PCs Windows
----
-
-## 📷 Screenshots
-
-### Menú principal
-![Menu principal](img/menu.jpg)
-
-### Información del sistema
-![Informacion del sistema](img/informacion.jpg)
-
-### Limpieza de sistema
-![Limpieza de sistema](img/limpieza.jpg)
-
-### Reparación de red
-![Reparacion de red](img/reparacion_red.jpg)
-
-### Usuarios del sistema
-![Usuarios del sistema](img/usuarios.jpg)
-
-### God Mode
-![God Mode](img/god_mode.jpg)
 
 ---
 
-## 📌 Estado actual
+## Estado actual
 
-Proyecto en desarrollo activo.
-La toolkit continúa evolucionando mediante mejoras progresivas,
+Version 2.0.0 finalizada.
+El proyecto continúa evolucionando mediante mejoras progresivas,
 refactorización y expansión de funcionalidades.
