@@ -6,7 +6,7 @@
     agrupando instancias multiples del mismo proceso. Abrevia rutas largas
     para mejorar la legibilidad. Incluye resumen de uso de CPU y RAM.
 .NOTES
-    Version : 2.0.0
+    Version : 2.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -141,7 +141,7 @@ function Get-ClasificacionProceso {
     if ($ProcesosMalware -contains $Nombre.ToLower()) {
         return [PSCustomObject]@{
             Nivel     = "ERROR"
-            Categoria = "Posible malware - investigar inmediatamente"
+            Categoria = "MAL"
         }
     }
 
@@ -149,7 +149,7 @@ function Get-ClasificacionProceso {
     if ($Procesossistema -contains $Nombre) {
         return [PSCustomObject]@{
             Nivel     = "SUCCESS"
-            Categoria = "Sistema operativo"
+            Categoria = "S.O"
         }
     }
 
@@ -157,7 +157,7 @@ function Get-ClasificacionProceso {
     if ($ProcesosAplicaciones -contains $Nombre) {
         return [PSCustomObject]@{
             Nivel     = "INFO"
-            Categoria = "Aplicacion conocida"
+            Categoria = "APP"
         }
     }
 
@@ -168,7 +168,7 @@ function Get-ClasificacionProceso {
         if (-not $rutaEstandar) {
             return [PSCustomObject]@{
                 Nivel     = "WARNING"
-                Categoria = "Ruta inusual - verificar"
+                Categoria = "EXT"
             }
         }
     }
@@ -177,14 +177,14 @@ function Get-ClasificacionProceso {
     if (-not $Ruta -or $Ruta -eq "N/A") {
         return [PSCustomObject]@{
             Nivel     = "INFO"
-            Categoria = "Sin ruta (sistema/kernel)"
+            Categoria = "SYS"
         }
     }
 
     # Default: proceso desconocido pero con ruta estandar
     return [PSCustomObject]@{
         Nivel     = "WARNING"
-        Categoria = "Proceso desconocido"
+        Categoria = "DES"
     }
 }
 
@@ -243,7 +243,8 @@ $procesosAgrupados = $todosProcesos |
                 Nivel      = $nivelMax.Nivel
                 Categoria  = $nivelMax.Categoria
             }
-        } | Sort-Object { @{ ERROR=0; WARNING=1; INFO=2; SUCCESS=3 }[$_.Nivel] }, RAMMB -Descending
+        } | Sort-Object @{Expression={ @{ ERROR=0; WARNING=1; INFO=2; SUCCESS=3 }[$_.Nivel] }; Ascending=$true},
+        @{Expression={ $_.RAMMB }; Descending=$true}
 
 #endregion
 
@@ -286,10 +287,16 @@ Write-Log "Agrupados por nombre. ERROR y WARNING aparecen primero." -Level WARNI
 Write-Blank -LogFile $LogFile
 
 foreach ($p in $procesosAgrupados) {
-    $instStr = if ($p.Instancias -gt 1) { "x$($p.Instancias)" } else { "   " }
-    $linea   = "{0,-25} {1}  [{2}]" -f $p.Nombre, $instStr, $p.Categoria
+    $instStr   = if ($p.Instancias -gt 1) { " x$($p.Instancias)" } else { "" }
+    $nombreInst = "$($p.Nombre)$instStr"
+    $tag        = Get-CenteredTag -Text $p.Categoria -TotalWidth 5
+    $linea      = "{0,-25} {1}" -f $nombreInst, $tag
     Write-Log $linea -Level $p.Nivel -LogFile $LogFile
 }
+
+Write-Blank -LogFile $LogFile
+Write-Log "Referencias: S.O = Sistema operativo  APP = Aplicacion conocida  SYS = Sin ruta/kernel" -Level NOTE -LogFile $LogFile
+Write-Log "             EXT = Ruta externa       DES = Desconocido          MAL = Posible malware" -Level NOTE -LogFile $LogFile
 Write-Blank -LogFile $LogFile
 
 #endregion
