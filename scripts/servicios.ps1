@@ -6,7 +6,7 @@
     servicios raramente utilizados. No desactiva ni modifica nada,
     solo reporta el estado para que el tecnico tome decisiones informadas.
 .NOTES
-    Version : 2.0.0
+    Version : 2.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -88,7 +88,7 @@ $Categorias = @(
 .PARAMETER Nombre
     Nombre tecnico del servicio (ej: "DiagTrack").
 .OUTPUTS
-    String con el estado: "Running", "Stopped", "Disabled" o "No instalado".
+    String con el estado: "Running", "Stopped", "Disabled" o "Absent".
 #>
 function Get-EstadoServicio {
     param([string]$Nombre)
@@ -97,7 +97,7 @@ function Get-EstadoServicio {
         $svc = Get-Service -Name $Nombre -ErrorAction Stop
         return $svc.Status.ToString()
     } catch {
-        return "No instalado"
+        return "Absent"
     }
 }
 
@@ -117,11 +117,11 @@ function Get-NivelPorEstado {
     param([string]$Estado)
 
     switch ($Estado) {
-        "Running"      { return "WARNING" }
-        "Stopped"      { return "SUCCESS" }
-        "Disabled"     { return "SUCCESS" }
-        "No instalado" { return "INFO"    }
-        default        { return "INFO"    }
+        "Running"   { return "WARNING" }
+        "Stopped"   { return "SUCCESS" }
+        "Disabled"  { return "SUCCESS" }
+        "Absent"    { return "INFO"    }
+        default     { return "INFO"    }
     }
 }
 
@@ -161,7 +161,8 @@ foreach ($categoria in $Resultados) {
     Write-Blank -LogFile $LogFile
 
     foreach ($svc in $categoria.Servicios) {
-        $linea = "{0,-20} [{1}] {2}" -f $svc.Nombre, $svc.Estado, $svc.Descripcion
+        $tag   = Get-CenteredTag -Text $svc.Estado -TotalWidth 9
+        $linea = "{0,-18} {1} {2}" -f $svc.Nombre, $tag, $svc.Descripcion
         Write-Log $linea -Level $svc.Nivel -LogFile $LogFile
     }
 
