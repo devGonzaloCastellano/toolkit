@@ -34,7 +34,7 @@ function Write-Log {
         [Parameter(Mandatory)]
         [string]$Message,
 
-        [ValidateSet("INFO", "SUCCESS", "WARNING", "ERROR")]
+        [ValidateSet("INFO", "SUCCESS", "WARNING", "ERROR", "NOTE")]
         [string]$Level = "INFO",
 
         [string]$LogFile
@@ -45,6 +45,7 @@ function Write-Log {
         SUCCESS = "Green"
         WARNING = "Yellow"
         ERROR   = "Red"
+        NOTE    = "DarkMagenta"
     }
 
     $timestamp = Get-Date -Format "HH:mm"
