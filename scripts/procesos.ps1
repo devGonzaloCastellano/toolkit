@@ -54,7 +54,9 @@ $ProcesosSistema = @(
     "TextInputHost", "ApplicationFrameHost", "SystemSettingsBroker",
     "LsaIso", "SgrmBroker", "sppsvc", "TrustedInstaller",
     "WUDFHost", "wlanext", "WmiApSrv", "msdtc", "vmcompute",
-    "vmmem", "vmwp", "Memory Compression"
+    "vmmem", "vmwp", "Memory Compression", "SearchApp", "splwow64",
+    "backgroundTaskHost", "UserOOBEBroker", "AggregatorHost", "CompPkgSrv",
+    "SystemSettings", "Video.UI"
 )
 
 # Procesos de aplicaciones conocidas y legitimas
@@ -63,16 +65,18 @@ $ProcesosAplicaciones = @(
     "code", "idea64", "idea", "webstorm", "pycharm", "clion",
     "java", "javaw", "node", "python", "python3",
     "slack", "discord", "teams", "zoom", "skype",
-    "spotify", "vlc", "mpv",
-    "git", "git-bash",
+    "spotify", "vlc", "mpv", "OfficeClickToRun",
+    "git", "git-bash", "OneDrive.Sync.Service",
     "docker", "com.docker.backend", "com.docker.proxy",
     "powershell", "pwsh", "cmd", "WindowsTerminal", "wt",
     "notepad", "notepad++", "sublime_text",
-    "OneDrive", "dropbox",
+    "OneDrive", "dropbox", "CalculatorApp",
     "steamwebhelper", "steam", "EpicGamesLauncher",
     "AdobeCollabSync", "acrobat", "acrocef",
     "SecurityHealthSystray", "EPPCCMON", "EPSDNMON",
-    "remoting_host", "crash_handler"
+    "remoting_host", "crash_handler", "PaintStudio.View",
+    "jusched", "armsvc", "CCXProcess", "AdobeIPCBroker",
+    "EpSecuritySupport"
 )
 
 # Nombres de procesos asociados a malware conocido
@@ -283,7 +287,7 @@ Write-Blank -LogFile $LogFile
 # -- Todos los procesos agrupados por clasificacion --
 Write-Section "TODOS LOS PROCESOS" -LogFile $LogFile
 Write-Blank -LogFile $LogFile
-Write-Log "Agrupados por nombre. ERROR y WARNING aparecen primero." -Level WARNING -LogFile $LogFile
+Write-Log "Agrupados por nombre. ERROR y WARNING aparecen primero." -Level NOTE -LogFile $LogFile
 Write-Blank -LogFile $LogFile
 
 foreach ($p in $procesosAgrupados) {
