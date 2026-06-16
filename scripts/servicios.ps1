@@ -153,7 +153,7 @@ $Resultados = foreach ($categoria in $Categorias) {
 
 Write-Section "SERVICIOS INNECESARIOS" -LogFile $LogFile
 Write-Blank -LogFile $LogFile
-Write-Log "Solo muestra estado. No desactiva ni modifica nada." -Level WARNING -LogFile $LogFile
+Write-Log "Solo muestra estado. No desactiva ni modifica nada." -Level NOTE -LogFile $LogFile
 Write-Blank -LogFile $LogFile
 
 foreach ($categoria in $Resultados) {
@@ -173,15 +173,15 @@ foreach ($categoria in $Resultados) {
 
 #region REFERENCIA DE COMANDOS
 
-Write-Section "REFERENCIA DE COMANDOS" -LogFile $LogFile
+Write-Section "REFERENCIA DE COMANDOS" -Level NOTE -LogFile $LogFile
 Write-Blank -LogFile $LogFile
-Write-Log "Para deshabilitar un servicio:" -LogFile $LogFile
-Write-Log "  Stop-Service -Name 'NombreServicio' -Force" -LogFile $LogFile
-Write-Log "  Set-Service  -Name 'NombreServicio' -StartupType Disabled" -LogFile $LogFile
+Write-Log "Para deshabilitar un servicio:" -Level NOTE -LogFile $LogFile
+Write-Log "  Stop-Service -Name 'NombreServicio' -Force" -Level NOTE -LogFile $LogFile
+Write-Log "  Set-Service  -Name 'NombreServicio' -StartupType Disabled" -Level NOTE -LogFile $LogFile
 Write-Blank -LogFile $LogFile
-Write-Log "Para reactivar un servicio:" -LogFile $LogFile
-Write-Log "  Set-Service  -Name 'NombreServicio' -StartupType Automatic" -LogFile $LogFile
-Write-Log "  Start-Service -Name 'NombreServicio'" -LogFile $LogFile
+Write-Log "Para reactivar un servicio:" -LogFile $LogFile -Level NOTE
+Write-Log "  Set-Service  -Name 'NombreServicio' -StartupType Automatic" -Level NOTE -LogFile $LogFile
+Write-Log "  Start-Service -Name 'NombreServicio'" -Level NOTE -LogFile $LogFile
 Write-Blank -LogFile $LogFile
 
 #endregion
