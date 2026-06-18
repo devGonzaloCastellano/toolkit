@@ -173,7 +173,7 @@ foreach ($categoria in $Resultados) {
 
 #region REFERENCIA DE COMANDOS
 
-Write-Section "REFERENCIA DE COMANDOS" -Level NOTE -LogFile $LogFile
+Write-Section "REFERENCIA DE COMANDOS" -LogFile $LogFile
 Write-Blank -LogFile $LogFile
 Write-Log "Para deshabilitar un servicio:" -Level NOTE -LogFile $LogFile
 Write-Log "  Stop-Service -Name 'NombreServicio' -Force" -Level NOTE -LogFile $LogFile
