@@ -7,7 +7,7 @@
     el proceso asociado y el origen/destino de la conexion.
     Ayuda a identificar conexiones sospechosas o inesperadas.
 .NOTES
-    Version : 2.0.0
+    Version : 2.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -98,7 +98,7 @@ $ProcesosConfiables = @(
 
 <#
 .SYNOPSIS
-    Obtiene el nombre del proceso dueno de una conexion por su PID.
+    Obtiene el nombre del proceso dueño de una conexion por su PID.
 .PARAMETER Pid
     ID del proceso.
 .OUTPUTS
@@ -215,8 +215,6 @@ function Format-Endpoint {
     return $Endpoint
 }
 
-
-
 # Detectar prefijo IPv6 local desde las conexiones activas
 # Es mas confiable que tomarlo de Get-NetIPAddress porque hay multiples IPs IPv6
 # y la que usa para conectarse puede no ser la primera de la lista
@@ -316,7 +314,8 @@ if ($conexionesTCP) {
         Write-Log "Conexiones locales:" -LogFile $LogFile
         Write-Blank -LogFile $LogFile
         foreach ($c in $tcpLocales) {
-            $linea = "{0,-22} <-> {1,-22} [{2}]" -f $c.LocalEndpoint, $c.RemoteEndpoint, $c.Proceso
+            $tagProceso = Get-CenteredTag -Text $c.Proceso -TotalWidth 8
+            $linea = "{0,-22} <-> {1,-22} {2}" -f $c.LocalEndpoint, $c.RemoteEndpoint, $tagProceso
             Write-Log $linea -Level $c.Nivel -LogFile $LogFile
         }
         Write-Blank -LogFile $LogFile
@@ -334,7 +333,13 @@ Write-Blank -LogFile $LogFile
 
 if ($puertosListen) {
     foreach ($p in $puertosListen) {
-        $linea = "Puerto {0,-6} [{1}] {2}" -f $p.Puerto, $p.Proceso, $p.Descripcion
+        $ProcesoMostrar = $p.Proceso
+        if ($ProcesoMostrar.Length -gt 10 -and $ProcesoMostrar.Contains('.')) {
+            $ProcesoMostrar = $ProcesoMostrar.Split('.')[0]
+        }
+
+        $tagProceso = Get-CenteredTag -Text $ProcesoMostrar -TotalWidth 10
+        $linea = "Puerto {0,-6} {1} {2}" -f $p.Puerto, $tagProceso, $p.Descripcion
         Write-Log $linea -Level $p.Nivel -LogFile $LogFile
     }
 } else {
@@ -348,7 +353,8 @@ Write-Blank -LogFile $LogFile
 
 if ($puertosUDP) {
     foreach ($p in $puertosUDP) {
-        $linea = "Puerto {0,-6} [{1}]" -f $p.Puerto, $p.Proceso
+        $tag = Get-CenteredTag -Text $p.Proceso -TotalWidth 9
+        $linea = "Puerto {0,-6} {1}" -f $p.Puerto, $tag
         Write-Log $linea -LogFile $LogFile
     }
 } else {
