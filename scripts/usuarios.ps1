@@ -6,7 +6,7 @@
     de invitado, sesiones activas y los ultimos inicios de sesion
     registrados en el log de eventos de seguridad de Windows.
 .NOTES
-    Version : 2.0.0
+    Version : 2.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -76,16 +76,19 @@ function Get-CuentasLocales {
 function Get-GruposLocales {
     try {
         Get-LocalGroup -ErrorAction Stop | ForEach-Object {
+
             $grupo = $_.Name
             $miembros = try {
                 (Get-LocalGroupMember -Group $grupo -ErrorAction Stop |
-                        ForEach-Object { $_.Name }) -join ", "
+                        ForEach-Object {
+                            ($_.Name -split '\\')[-1]
+                        }) -join ", "
             } catch {
-                "sin miembros"
+                "-"
             }
             [PSCustomObject]@{
                 Grupo    = $grupo
-                Miembros = if ($miembros) { $miembros } else { "sin miembros" }
+                Miembros = if ($miembros) { $miembros } else { "-" }
             }
         }
     } catch {
@@ -176,14 +179,30 @@ Write-Blank -LogFile $LogFile
 
 # -- Seccion 1: Cuentas locales --
 Write-Section "CUENTAS LOCALES" -LogFile $LogFile
+Write-Log "Se muestra el ultimo inicio de sesion registrado." -Level NOTE -LogFile $LogFile
 Write-Blank -LogFile $LogFile
 
 if ($cuentas) {
-    foreach ($cuenta in $cuentas) {
-        $nivel = if ($cuenta.Habilitada) { "INFO" } else { "INFO" }
-        $linea = "{0,-20} Habilitada: {1,-5}  Ultimo login: {2}" -f `
-                 $cuenta.Nombre, $cuenta.Habilitada, $cuenta.UltimoLogin
-        Write-Log $linea -Level $nivel -LogFile $LogFile
+
+    $cuentasActivas   = @($cuentas | Where-Object { $_.Habilitada })
+    $cuentasInactivas = @($cuentas | Where-Object { -not $_.Habilitada })
+
+    Write-Log "Activas ($($cuentasActivas.Count))" -Level SUCCESS -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    foreach ($cuenta in $cuentasActivas) {
+        $linea = "{0,-20} {1}" -f $cuenta.Nombre, $cuenta.UltimoLogin
+        Write-Log $linea -LogFile $LogFile
+    }
+
+    Write-Blank -LogFile $LogFile
+
+    Write-Log "Inactivas ($($cuentasInactivas.Count))" -Level INFO -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    foreach ($cuenta in $cuentasInactivas) {
+        $linea = "{0,-20} {1}" -f $cuenta.Nombre, $cuenta.UltimoLogin
+        Write-Log $linea -LogFile $LogFile
     }
 } else {
     Write-Log "No se pudieron obtener las cuentas locales." -Level WARNING -LogFile $LogFile
@@ -194,17 +213,30 @@ Write-Blank -LogFile $LogFile
 Write-Section "GRUPOS Y MIEMBROS" -LogFile $LogFile
 Write-Blank -LogFile $LogFile
 Write-Log "Importante: un usuario desconocido en Administradores es alerta critica." -Level WARNING -LogFile $LogFile
+Write-Log "Equipo auditado: $env:COMPUTERNAME" -Level NOTE -LogFile $LogFile
 Write-Blank -LogFile $LogFile
 
-if ($grupos) {
-    foreach ($grupo in $grupos) {
-        Write-Log "[$($grupo.Grupo)]" -LogFile $LogFile
-        Write-Log "  $($grupo.Miembros)" -LogFile $LogFile
-        Write-Blank -LogFile $LogFile
-    }
-} else {
-    Write-Log "No se pudieron obtener los grupos." -Level WARNING -LogFile $LogFile
+$gruposConMiembros = @($grupos | Where-Object { $_.Miembros -ne "-" })
+$gruposSinMiembros = @($grupos | Where-Object { $_.Miembros -eq "-" })
+
+Write-Log "Grupos con miembros ($($gruposConMiembros.Count))" -Level SUCCESS -LogFile $LogFile
+Write-Blank -LogFile $LogFile
+
+foreach ($grupo in $gruposConMiembros) {
+    $linea = "{0,-50} {1}" -f $grupo.Grupo, $grupo.Miembros
+    Write-Log $linea -Level INFO -LogFile $LogFile
 }
+
+Write-Blank -LogFile $LogFile
+
+Write-Log "Grupos sin miembros ($($gruposSinMiembros.Count))" -Level INFO -LogFile $LogFile
+Write-Blank -LogFile $LogFile
+
+foreach ($grupo in $gruposSinMiembros) {
+    $linea = "{0,-50} -" -f $grupo.Grupo
+    Write-Log $linea -Level INFO -LogFile $LogFile
+}
+Write-Blank -LogFile $LogFile
 
 # -- Seccion 3: Cuenta de invitado --
 Write-Section "CUENTA DE INVITADO" -LogFile $LogFile
@@ -225,10 +257,23 @@ Write-Blank -LogFile $LogFile
 Write-Section "SESIONES ACTIVAS" -LogFile $LogFile
 Write-Blank -LogFile $LogFile
 
+
 try {
-    $sesiones = query user 2>$null
+    $sesiones = query user 2>$null | Select-Object -Skip 1
     if ($sesiones) {
-        $sesiones | ForEach-Object { Write-Log $_ -LogFile $LogFile }
+        foreach ($linea in $sesiones) {
+            $linea = $linea.TrimStart('>')
+
+            if ($linea -match '^(\S+)\s+(\S+)\s+(\d+)\s+(\S+)') {
+                $usuario = $matches[1]
+                $sesion  = $matches[2]
+                $estado  = $matches[4]
+
+                $texto = "{0,-10} {1,-10} {2}" -f $usuario, $estado, $sesion
+                Write-Log "Sesiones detectadas: $($sesiones.Count)" -Level SUCCESS -LogFile $LogFile
+                Write-Log $texto -LogFile $LogFile
+            }
+        }
     } else {
         Write-Log "Sin sesiones activas detectadas." -LogFile $LogFile
     }
@@ -248,10 +293,10 @@ if ($ultimosLogin) {
     }
 } else {
     Write-Log "No se pudieron obtener los eventos de seguridad." -Level WARNING -LogFile $LogFile
-    Write-Log "Posibles causas:" -LogFile $LogFile
-    Write-Log "  - El log de auditoria de seguridad no esta habilitado." -LogFile $LogFile
-    Write-Log "  - Politica de grupo restringe el acceso al log." -LogFile $LogFile
-    Write-Log "  - Para habilitarlo: secpol.msc > Directivas locales > Auditoria" -LogFile $LogFile
+    Write-Log "Posibles causas:" -Level NOTE -LogFile $LogFile
+    Write-Log "  - El log de auditoria de seguridad no esta habilitado." -Level NOTE -LogFile $LogFile
+    Write-Log "  - Politica de grupo restringe el acceso al log." -Level NOTE -LogFile $LogFile
+    Write-Log "  - Para habilitarlo: secpol.msc > Directivas locales > Auditoria" -Level NOTE -LogFile $LogFile
 }
 Write-Blank -LogFile $LogFile
 
