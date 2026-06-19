@@ -8,7 +8,7 @@
     Al finalizar reinicia los servicios y el sistema queda listo para
     buscar actualizaciones nuevamente.
 .NOTES
-    Version : 2.0.0
+    Version : 2.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -84,7 +84,8 @@ function Invoke-PasoReparacion {
 
     Write-Blank -LogFile $LogFile
     Write-Log "[$Numero/$Total] $Titulo" -LogFile $LogFile
-    Write-Log $Descripcion -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Write-Log $Descripcion -Level NOTE -LogFile $LogFile
     Write-Blank -LogFile $LogFile
 
     try {
@@ -107,7 +108,7 @@ $totalPasos = 6
 # -- Paso 1: Detener servicios --
 Invoke-PasoReparacion -Numero 1 -Total $totalPasos `
     -Titulo "Detener servicios de Windows Update" `
-    -Descripcion "Antes de modificar archivos de Update hay que detener los servicios que los usan. Si no, Windows los regenera al instante." `
+    -Descripcion "Detiene los servicios para evitar que Windows Update recree archivos durante la reparacion." `
     -Accion {
     foreach ($svc in $ServiciosUpdate) {
         Stop-Service -Name $svc -Force -ErrorAction SilentlyContinue
@@ -117,7 +118,8 @@ Invoke-PasoReparacion -Numero 1 -Total $totalPasos `
 # -- Paso 2: Renombrar carpetas de cache --
 Invoke-PasoReparacion -Numero 2 -Total $totalPasos `
     -Titulo "Limpiar cache de Windows Update" `
-    -Descripcion "Renombra las carpetas de cache en lugar de borrarlas. Windows las recrea limpias al reiniciar los servicios. Las originales quedan como .bak para rollback si algo falla." `
+    -Descripcion "Renombra la cache de Windows Update.
+                    Las carpetas originales quedan como respaldo (.bak)." `
     -Accion {
     $carpetas = @(
         @{ Origen = "C:\Windows\SoftwareDistribution"; Backup = "C:\Windows\SoftwareDistribution.bak" },
@@ -130,9 +132,9 @@ Invoke-PasoReparacion -Numero 2 -Total $totalPasos `
                 Remove-Item $c.Backup -Recurse -Force -ErrorAction SilentlyContinue
             }
             Rename-Item -Path $c.Origen -NewName $c.Backup -ErrorAction Stop
-            Write-Log "  Renombrada: $($c.Origen)" -LogFile $LogFile
+            Write-Log "Renombrada: $($c.Origen)" -Level SUCCESS -LogFile $LogFile
         } else {
-            Write-Log "  No encontrada (omitida): $($c.Origen)" -LogFile $LogFile
+            Write-Log "No encontrada (omitida): $($c.Origen)" -Level WARNING -LogFile $LogFile
         }
     }
 }
@@ -140,7 +142,7 @@ Invoke-PasoReparacion -Numero 2 -Total $totalPasos `
 # -- Paso 3: Limpiar registro --
 Invoke-PasoReparacion -Numero 3 -Total $totalPasos `
     -Titulo "Limpiar registro de Windows Update" `
-    -Descripcion "Elimina claves del registro que guardan el estado de actualizaciones pendientes o con error. Fuerza a Windows Update a empezar desde cero." `
+    -Descripcion "Limpia identificadores y estados almacenados por Windows Update." `
     -Accion {
     $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate"
     $claves  = @("AccountDomainSid", "PingID", "SusClientId")
@@ -152,7 +154,7 @@ Invoke-PasoReparacion -Numero 3 -Total $totalPasos `
 # -- Paso 4: Reset componentes de red --
 Invoke-PasoReparacion -Numero 4 -Total $totalPasos `
     -Titulo "Resetear componentes de red" `
-    -Descripcion "Windows Update necesita red para conectarse a los servidores de Microsoft. Un Winsock corrupto puede impedir la conexion." `
+    -Descripcion "Restablece Winsock y la configuracion WinHTTP." `
     -Accion {
     netsh winsock reset | Out-Null
     netsh winhttp reset proxy | Out-Null
@@ -161,7 +163,7 @@ Invoke-PasoReparacion -Numero 4 -Total $totalPasos `
 # -- Paso 5: Reiniciar servicios --
 Invoke-PasoReparacion -Numero 5 -Total $totalPasos `
     -Titulo "Reiniciar servicios de Windows Update" `
-    -Descripcion "Al reiniciar, Windows detecta que las carpetas no existen y las recrea limpias automaticamente." `
+    -Descripcion "Vuelve a iniciar los servicios de Windows Update." `
     -Accion {
     foreach ($svc in $ServiciosUpdate) {
         Start-Service -Name $svc -ErrorAction SilentlyContinue
@@ -171,7 +173,7 @@ Invoke-PasoReparacion -Numero 5 -Total $totalPasos `
 # -- Paso 6: Re-registrar DLLs --
 Invoke-PasoReparacion -Numero 6 -Total $totalPasos `
     -Titulo "Re-registrar DLLs de Windows Update" `
-    -Descripcion "Algunas actualizaciones fallidas corrompen el registro de las DLLs que usa el servicio. Esto las vuelve a registrar correctamente." `
+    -Descripcion "Intenta registrar nuevamente componentes utilizados por Windows Update." `
     -Accion {
     $errores = 0
     foreach ($dll in $DllsUpdate) {
@@ -180,7 +182,8 @@ Invoke-PasoReparacion -Numero 6 -Total $totalPasos `
         if ($result.ExitCode -ne 0) { $errores++ }
     }
     if ($errores -gt 0) {
-        Write-Log "  $errores DLL(s) no pudieron registrarse (puede ser normal en Win11)." -Level WARNING -LogFile $LogFile
+        Write-Log "Componentes omitidos: $errores" -Level WARNING -LogFile $LogFile
+        Write-Log "Algunos componentes ya no existen o no requieren registro en esta version de Windows." -Level NOTE -LogFile $LogFile
     } else {
         Write-Log "  Todas las DLLs registradas correctamente." -LogFile $LogFile
     }
@@ -194,8 +197,8 @@ Write-Blank -LogFile $LogFile
 Write-Section "PROXIMOS PASOS" -LogFile $LogFile
 Write-Blank -LogFile $LogFile
 Write-Log "1. Reiniciar el equipo." -Level WARNING -LogFile $LogFile
-Write-Log "2. Abrir Windows Update y buscar actualizaciones." -LogFile $LogFile
-Write-Log "3. Si sigue fallando, revisar el log de este modulo." -LogFile $LogFile
+Write-Log "2. Abrir Windows Update y buscar actualizaciones." -Level NOTE -LogFile $LogFile
+Write-Log "3. Si sigue fallando, revisar el log de este modulo." -Level NOTE -LogFile $LogFile
 
 Write-Blank -LogFile $LogFile
 Write-Section -LogFile $LogFile
