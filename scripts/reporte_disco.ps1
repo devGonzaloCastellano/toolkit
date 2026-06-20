@@ -6,7 +6,7 @@
     lista las carpetas mas pesadas en C:\ para identificar consumo de espacio.
     El progreso de chkdsk se muestra en tiempo real.
 .NOTES
-    Version : 2.0.0
+    Version : 2.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -120,14 +120,14 @@ Write-Blank -LogFile $LogFile
 # -- Seccion 1: Verificacion chkdsk --
 Write-Section "VERIFICACION DE ERRORES - CHKDSK" -LogFile $LogFile
 Write-Blank -LogFile $LogFile
-Write-Log "Modo lectura: no modifica nada, solo reporta." -LogFile $LogFile
-Write-Log "El progreso se muestra en tiempo real por cada unidad." -LogFile $LogFile
+Write-Log "Modo lectura: no modifica nada, solo reporta." -Level NOTE -LogFile $LogFile
+Write-Log "El progreso se muestra en tiempo real por cada unidad." -Level NOTE -LogFile $LogFile
 Write-Blank -LogFile $LogFile
 
 # chkdsk escribe en UTF-16 - se ejecuta sin captura igual que SFC/DISM
 # para mostrar progreso nativo y evitar output erratico
 foreach ($unidad in $unidades) {
-    Write-Log "--- Verificando unidad $unidad : ---" -LogFile $LogFile
+    Write-Log "--- Verificando unidad $unidad : ---" -Level NOTE -LogFile $LogFile
     Write-Blank -LogFile $LogFile
 
     $inicio   = Get-Date
@@ -156,7 +156,7 @@ foreach ($unidad in $unidades) {
 # -- Seccion 2: Carpetas mas pesadas en C:\ --
 Write-Section "CARPETAS MAS PESADAS EN C:\" -LogFile $LogFile
 Write-Blank -LogFile $LogFile
-Write-Log "Calculando volumen de carpetas... esto puede tardar unos segundos." -Level WARNING -LogFile $LogFile
+Write-Log "Calculando volumen de carpetas... esto puede tardar unos segundos." -Level NOTE -LogFile $LogFile
 Write-Blank -LogFile $LogFile
 
 $carpetasC = Get-ChildItem -Path "C:\" -Directory -ErrorAction SilentlyContinue
@@ -179,7 +179,7 @@ $resultadosCarpetas |
         Sort-Object Bytes -Descending |
         Select-Object -First 10 |
         ForEach-Object {
-            $linea = "  {0,-35} {1,8} GB" -f $_.Nombre, $_.GB
+            $linea = "  {0,-25} {1,8} GB" -f $_.Nombre, $_.GB
             Write-Log $linea -LogFile $LogFile
         }
 
