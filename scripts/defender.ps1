@@ -6,7 +6,7 @@
     de firmas de antivirus y antispyware, y opcionalmente ejecuta un escaneo
     rapido del sistema detectando amenazas activas.
 .NOTES
-    Version : 2.0.0
+    Version : 2.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -103,11 +103,22 @@ Write-Blank -LogFile $LogFile
 Show-DefenderStatus -Status $statusPrevio
 Write-Blank -LogFile $LogFile
 
-# -- Seccion 2: Actualizacion de definiciones --
+# -- Seccion 2: Testeo de Conectividad
+Write-Section "Test de Conectividad" -LogFile $LogFile
+
+Write-Blank -LogFile $LogFile
+if (-not (Test-InternetConnection)) {
+    Write-Log "Sin conexion a internet. Este modulo requiere conexion activa." -Level ERROR -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Invoke-Pause exit 1 }
+Write-Log "Conexion a internet verificada." -Level SUCCESS -LogFile $LogFile
+Write-Blank -LogFile $LogFile
+
+# -- Seccion 3: Actualizacion de definiciones --
 Write-Section "ACTUALIZANDO DEFINICIONES" -LogFile $LogFile
 Write-Blank -LogFile $LogFile
 Write-Log "Descargando ultimas firmas desde Microsoft..." -LogFile $LogFile
-Write-Log "Requiere conexion a internet. Puede tardar 1-5 minutos." -Level WARNING -LogFile $LogFile
+Write-Log "Puede tardar unos minutos." -Level WARNING -LogFile $LogFile
 Write-Blank -LogFile $LogFile
 
 try {
@@ -118,7 +129,7 @@ try {
 }
 Write-Blank -LogFile $LogFile
 
-# -- Seccion 3: Estado post-actualizacion --
+# -- Seccion 4: Estado post-actualizacion --
 $statusPost = Get-DefenderStatus
 
 Write-Section "ESTADO POST-ACTUALIZACION" -LogFile $LogFile
@@ -135,7 +146,7 @@ Write-Blank -LogFile $LogFile
 # -- Seccion 4: Escaneo rapido opcional --
 Write-Section "ESCANEO RAPIDO" -LogFile $LogFile
 Write-Blank -LogFile $LogFile
-Write-Log "Un escaneo rapido revisa memoria, registro y carpetas de inicio." -LogFile $LogFile
+Write-Log "Un escaneo rapido revisa memoria, registro y carpetas de inicio." -Level NOTE -LogFile $LogFile
 Write-Log "Tarda entre 5 y 15 minutos." -LogFile $LogFile
 Write-Blank -LogFile $LogFile
 
