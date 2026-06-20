@@ -6,7 +6,7 @@
     activos en el rango local via ping paralelo, muestra la tabla ARP
     con dispositivos recientes y lista recursos compartidos visibles.
 .NOTES
-    Version : 2.0.0
+    Version : 2.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -89,8 +89,8 @@ function Get-DispositivosRed {
 
     $prefijo = $ipLocal -replace '\.\d+$', ''
 
-    Write-Log "Escaneando $prefijo.1 - $prefijo.254 ..." -LogFile $LogFile
-    Write-Log "Esto puede tardar 30-60 segundos." -Level WARNING -LogFile $LogFile
+    Write-Log "Escaneando $prefijo.1 - $prefijo.254 ..." -Level NOTE -LogFile $LogFile
+    Write-Log "Esto puede tardar unos segundos." -Level WARNING -LogFile $LogFile
     Write-Blank -LogFile $LogFile
 
     # PS 7+ soporta ForEach-Object -Parallel
@@ -207,15 +207,16 @@ Write-Blank -LogFile $LogFile
 # -- Seccion 3: Tabla ARP --
 Write-Section "TABLA ARP - DISPOSITIVOS RECIENTES" -LogFile $LogFile
 Write-Blank -LogFile $LogFile
-Write-Log "Dispositivos con los que el equipo se comunico recientemente." -LogFile $LogFile
-Write-Log "La MAC permite identificar el fabricante (router, celular, PC, etc)." -LogFile $LogFile
+Write-Log "Dispositivos con los que el equipo se comunico recientemente." -Level NOTE -LogFile $LogFile
+Write-Log "La MAC permite identificar el fabricante (router, celular, PC, etc)." -Level NOTE -LogFile $LogFile
 Write-Blank -LogFile $LogFile
 
 $tablaARP = Get-TablaARP
 
 if ($tablaARP) {
     foreach ($entry in $tablaARP) {
-        $linea = "{0,-18} {1,-20} [{2}]" -f $entry.IP, $entry.MAC, $entry.Estado
+        $tag = Get-CenteredTag $entry.Estado -TotalWidth 11
+        $linea = "{0,-18} {1,-20} {2}" -f $entry.IP, $entry.MAC, $tag
         Write-Log $linea -LogFile $LogFile
     }
 } else {
