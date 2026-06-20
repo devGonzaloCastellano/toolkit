@@ -9,7 +9,7 @@
     Nota: SFC y DISM muestran su progreso directamente en consola en tiempo
     real. El detalle completo queda en sus logs nativos de Windows.
 .NOTES
-    Version : 2.0.0
+    Version : 2.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -43,6 +43,20 @@ $LogFile = $envInfo.LogFile
 
 #endregion
 
+#region VERIFICACION DE DEPENDENCIAS
+
+Write-Section "VERIFICACION DE DEPENDENCIAS" -LogFile $LogFile
+
+Write-Blank -LogFile $LogFile
+if (-not (Test-InternetConnection)) {
+    Write-Log "Sin conexion a internet. Este modulo requiere conexion activa." -Level ERROR -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Invoke-Pause exit 1 }
+Write-Log "Conexion a internet verificada." -Level SUCCESS -LogFile $LogFile
+Write-Blank -LogFile $LogFile
+
+# endregion
+
 #region LOGICA PRINCIPAL
 
 Write-Section "REPARACION DEL SISTEMA" -LogFile $LogFile
@@ -51,7 +65,7 @@ Write-Blank -LogFile $LogFile
 # -- Paso 1: SFC --
 Write-Section "PASO 1/2 - SFC" -LogFile $LogFile
 Write-Blank -LogFile $LogFile
-Write-Log "Verifica y repara archivos del sistema Windows." -LogFile $LogFile
+Write-Log "Verifica y repara archivos del sistema Windows." -Level NOTE -LogFile $LogFile
 Write-Log "Puede tardar entre 5 y 15 minutos. No cerrar esta ventana." -Level WARNING -LogFile $LogFile
 Write-Blank -LogFile $LogFile
 
@@ -92,9 +106,8 @@ Write-Blank -LogFile $LogFile
 # -- Paso 2: DISM --
 Write-Section "PASO 2/2 - DISM" -LogFile $LogFile
 Write-Blank -LogFile $LogFile
-Write-Log "Repara la imagen de Windows descargando componentes desde Microsoft." -LogFile $LogFile
-Write-Log "Requiere conexion a internet. Puede tardar entre 10 y 20 minutos." -Level WARNING -LogFile $LogFile
-Write-Log "No cerrar esta ventana." -Level WARNING -LogFile $LogFile
+Write-Log "Repara la imagen de Windows descargando componentes desde Microsoft." -Level NOTE -LogFile $LogFile
+Write-Log "Puede tardar entre 10 y 20 minutos. No cerrar esta ventana" -Level WARNING -LogFile $LogFile
 Write-Blank -LogFile $LogFile
 
 # El detalle completo queda en: C:\Windows\Logs\DISM\dism.log
