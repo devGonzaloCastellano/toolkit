@@ -7,7 +7,7 @@
     vacia la papelera y ejecuta Disk Cleanup. Muestra conteo de archivos
     eliminados, espacio liberado y duracion del proceso.
 .NOTES
-    Version : 2.0.0
+    Version : 2.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -89,19 +89,22 @@ $tempUser = $env:TEMP
 $count    = Remove-Temporales -Ruta $tempUser
 $totalItems += $count
 Write-Log "      OK. Items eliminados: $count" -Level SUCCESS -LogFile $LogFile
+Write-Blank -LogFile $LogFile
+
 
 # -- Paso 2: Temporales del sistema --
 Write-Log "[2/7] Limpiando temporales del sistema..." -LogFile $LogFile
 $count = Remove-Temporales -Ruta "C:\Windows\Temp"
 $totalItems += $count
 Write-Log "      OK. Items eliminados: $count" -Level SUCCESS -LogFile $LogFile
+Write-Blank -LogFile $LogFile
+
 
 # -- Paso 3: Prefetch (opcional) --
 Write-Log "[3/7] Limpieza de Prefetch..." -LogFile $LogFile
-Write-Log "      El Prefetch acelera el arranque de programas." -LogFile $LogFile
-Write-Log "      Limpiarlo ralentiza las primeras ejecuciones hasta que se regenere." -LogFile $LogFile
+Write-Log "      El Prefetch acelera el arranque de programas." -Level NOTE -LogFile $LogFile
+Write-Log "      Limpiarlo ralentiza las primeras ejecuciones hasta que se regenere." -Level NOTE -LogFile $LogFile
 Write-Log "      Recomendado solo si el sistema esta muy lento o hay archivos corruptos." -Level WARNING -LogFile $LogFile
-Write-Blank -LogFile $LogFile
 
 $respuesta = Read-Host "      Limpiar Prefetch? (s/n)"
 if ($respuesta -eq "s") {
@@ -111,12 +114,16 @@ if ($respuesta -eq "s") {
 } else {
     Write-Log "      Omitido." -LogFile $LogFile
 }
+Write-Blank -LogFile $LogFile
+
 
 # -- Paso 4: Archivos recientes --
 Write-Log "[4/7] Limpiando historial de archivos recientes..." -LogFile $LogFile
 $count = Remove-Temporales -Ruta "$env:APPDATA\Microsoft\Windows\Recent"
 $totalItems += $count
 Write-Log "      OK. Items eliminados: $count" -Level SUCCESS -LogFile $LogFile
+Write-Blank -LogFile $LogFile
+
 
 # -- Paso 5: Cache de Windows Update --
 Write-Log "[5/7] Limpiando cache de Windows Update..." -LogFile $LogFile
@@ -129,6 +136,8 @@ try {
 } catch {
     Write-Log "      Error al limpiar cache de Windows Update: $_" -Level ERROR -LogFile $LogFile
 }
+Write-Blank -LogFile $LogFile
+
 
 # -- Paso 6: Flush DNS y papelera --
 Write-Log "[6/7] Flush DNS y vaciando papelera..." -LogFile $LogFile
@@ -139,6 +148,8 @@ try {
 } catch {
     Write-Log "      Error: $_" -Level ERROR -LogFile $LogFile
 }
+Write-Blank -LogFile $LogFile
+
 
 # -- Paso 7: Disk Cleanup --
 Write-Log "[7/7] Ejecutando Disk Cleanup..." -LogFile $LogFile
@@ -163,6 +174,8 @@ try {
 } catch {
     Write-Log "      Error al ejecutar Disk Cleanup: $_" -Level ERROR -LogFile $LogFile
 }
+Write-Blank -LogFile $LogFile
+
 
 #endregion
 
@@ -183,7 +196,7 @@ Write-Blank -LogFile $LogFile
 Write-Log "Duracion          : $duracion segundos"                         -LogFile $LogFile
 Write-Log "Items eliminados  : $totalItems"                                -LogFile $LogFile
 Write-Log "Espacio liberado  : $espacioStr"                                -Level SUCCESS -LogFile $LogFile
-Write-Log "(No incluye Disk Cleanup que corre en segundo plano)"           -LogFile $LogFile
+Write-Log "(No incluye Disk Cleanup que corre en segundo plano)"           -Level NOTE -LogFile $LogFile
 Write-Blank -LogFile $LogFile
 Write-Log "Nota: Disk Cleanup puede seguir corriendo en segundo plano." -Level WARNING -LogFile $LogFile
 
