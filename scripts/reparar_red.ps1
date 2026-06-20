@@ -7,7 +7,7 @@
     y limpieza de configuracion de proxy. Muestra diagnostico antes y
     despues de la reparacion para verificar el resultado.
 .NOTES
-    Version : 2.0.0
+    Version : 2.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -108,7 +108,7 @@ function Invoke-PasoReparacion {
 
     Write-Blank -LogFile $LogFile
     Write-Log "[$Numero/$Total] $Titulo" -Level INFO -LogFile $LogFile
-    Write-Log $Descripcion -LogFile $LogFile
+    Write-Log $Descripcion -Level NOTE -LogFile $LogFile
     Write-Blank -LogFile $LogFile
 
     try {
@@ -140,12 +140,12 @@ $totalPasos = 5
 
 Invoke-PasoReparacion -Numero 1 -Total $totalPasos `
     -Titulo "Flush DNS" `
-    -Descripcion "Elimina respuestas DNS en cache. Util cuando un sitio cambio de IP o hay respuestas incorrectas guardadas." `
+    -Descripcion "Limpia la cache DNS almacenada por Windows." `
     -Accion { Clear-DnsClientCache -ErrorAction Stop }
 
 Invoke-PasoReparacion -Numero 2 -Total $totalPasos `
     -Titulo "Liberar y renovar IP" `
-    -Descripcion "Devuelve la IP al router y solicita una nueva. Util cuando hay conflictos de IP o el equipo no obtiene direccion automaticamente." `
+    -Descripcion "Solicita una nueva direccion IP al router." `
     -Accion {
     $adapters = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
     foreach ($adapter in $adapters) {
@@ -156,17 +156,17 @@ Invoke-PasoReparacion -Numero 2 -Total $totalPasos `
 
 Invoke-PasoReparacion -Numero 3 -Total $totalPasos `
     -Titulo "Reset Winsock" `
-    -Descripcion "Restaura la interfaz de red de Windows. Se puede corromper por malware o instalaciones de VPN/proxy mal removidas." `
+    -Descripcion "Restablece la configuracion Winsock de Windows." `
     -Accion { netsh winsock reset | Out-Null }
 
 Invoke-PasoReparacion -Numero 4 -Total $totalPasos `
     -Titulo "Reset TCP/IP" `
-    -Descripcion "Restaura la configuracion TCP/IP a valores de fabrica. Mas profundo que el reset Winsock, afecta toda la pila de red." `
+    -Descripcion "Restablece la configuracion TCP/IP a valores predeterminados." `
     -Accion { netsh int ip reset | Out-Null }
 
 Invoke-PasoReparacion -Numero 5 -Total $totalPasos `
     -Titulo "Limpiar configuracion de proxy" `
-    -Descripcion "Elimina configuracion de proxy del sistema. Algunos malware configuran un proxy para interceptar trafico." `
+    -Descripcion "Elimina configuraciones de proxy almacenadas en Windows." `
     -Accion {
     netsh winhttp reset proxy | Out-Null
     Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" `
