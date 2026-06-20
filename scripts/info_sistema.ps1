@@ -8,7 +8,7 @@
     particiones, red, servicios criticos y usuario actual.
     Finaliza con un diagnostico general del estado del equipo.
 .NOTES
-    Version : 2.0.0
+    Version : 2.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -51,6 +51,7 @@ Write-Blank -LogFile $LogFile
 # -- Sistema Operativo --
 $os       = Get-CimInstance Win32_OperatingSystem  -ErrorAction SilentlyContinue
 $cs       = Get-CimInstance Win32_ComputerSystem   -ErrorAction SilentlyContinue
+$mb       = Get-CimInstance Win32_BaseBoard        -ErrorAction SilentlyContinue
 $bios     = Get-CimInstance Win32_BIOS             -ErrorAction SilentlyContinue
 
 # -- UBR (Update Build Revision) para version exacta del parche --
@@ -67,19 +68,6 @@ $uptimeStr = if ($uptime) {
 # -- Procesador --
 $cpu    = Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue | Select-Object -First 1
 $cpuUso = if ($cpu) { $cpu.LoadPercentage } else { 0 }
-
-# -- Temperatura CPU (no todos los fabricantes la exponen) --
-$tempCPU = $null
-try {
-    $thermal = Get-WmiObject -Namespace "root\wmi" -Class MSAcpi_ThermalZoneTemperature -ErrorAction Stop
-    if ($thermal) {
-        # Conversion: valor en decimas de Kelvin -> Celsius
-        $tempK    = ($thermal | Measure-Object -Property CurrentTemperature -Average).Average
-        $tempCPU  = [math]::Round($tempK / 10 - 273.15, 1)
-        # Valores fuera de rango indican que el fabricante no lo expone correctamente
-        if ($tempCPU -lt 0 -or $tempCPU -gt 150) { $tempCPU = $null }
-    }
-} catch { $tempCPU = $null }
 
 # -- RAM --
 $modulosRAM   = Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue
@@ -120,7 +108,7 @@ $particiones = Get-WmiObject Win32_DiskPartition -ErrorAction SilentlyContinue |
             foreach ($l in $logicos) {
                 [PSCustomObject]@{
                     DiscoId = $part.DiskIndex
-                    Unidad  = $l.DeviceID
+                    Unidad  = $l.DeviceID.TrimEnd(':')
                     TotalGB = [math]::Round($l.Size      / 1GB, 1)
                     LibreGB = [math]::Round($l.FreeSpace / 1GB, 1)
                 }
@@ -140,9 +128,9 @@ $estadosServicios  = foreach ($svc in $serviciosCriticos) {
     [PSCustomObject]@{
         Nombre  = $svc
         Display = switch ($svc) {
-            "WinDefend" { "Windows Defender" }
-            "MpsSvc"    { "Windows Firewall"  }
-            "wuauserv"  { "Windows Update"    }
+            "WinDefend" { "Win Defender" }
+            "MpsSvc"    { "Win Firewall" }
+            "wuauserv"  { "Win Update"   }
         }
         Estado  = if ($s) { $s.Status.ToString() } else { "No encontrado" }
     }
@@ -169,9 +157,31 @@ Write-Blank -LogFile $LogFile
 Write-Section "EQUIPO" -LogFile $LogFile
 Write-Blank -LogFile $LogFile
 Write-Log "Nombre       : $($cs.Name)"         -LogFile $LogFile
-Write-Log "Fabricante   : $($cs.Manufacturer)" -LogFile $LogFile
-Write-Log "Modelo       : $($cs.Model)"        -LogFile $LogFile
-Write-Log "Serie BIOS   : $($bios.SerialNumber)" -LogFile $LogFile
+Write-Blank -LogFile $LogFile
+
+# -- Placa Madre --
+Write-Section "PLACA MADRE" -LogFile $LogFile
+Write-Blank -LogFile $LogFile
+Write-Log "Modelo       : $($mb.Product)" -LogFile $LogFile
+Write-Log "Fabricante   : $($mb.Manufacturer)" -LogFile $LogFile
+Write-Log "Version      : $($mb.Version)"        -LogFile $LogFile
+Write-Log "Serial       : $($mb.SerialNumber)"        -LogFile $LogFile
+Write-Blank -LogFile $LogFile
+
+# -- BIOS --
+Write-Section "BIOS" -LogFile $LogFile
+Write-Blank -LogFile $LogFile
+Write-Log "Version      : $($bios.SMBIOSBIOSVersion)" -LogFile $LogFile
+Write-Log "Fabricante   : $($bios.Manufacturer)" -LogFile $LogFile
+if ($bios.ReleaseDate) {
+    try {
+        $fechaBios = [datetime]$bios.ReleaseDate
+        Write-Log "Fecha        : $($fechaBios.ToString('dd/MM/yyyy'))" -LogFile $LogFile
+    }
+    catch {
+        Write-Log "Fecha        : $($bios.ReleaseDate)" -LogFile $LogFile
+    }
+}
 Write-Blank -LogFile $LogFile
 
 # -- Procesador --
@@ -185,12 +195,6 @@ Write-Log "Velocidad    : $($cpu.MaxClockSpeed) MHz"         -LogFile $LogFile
 $nivelCPU = if ($cpuUso -ge 90) { "ERROR" } elseif ($cpuUso -ge 70) { "WARNING" } else { "SUCCESS" }
 Write-Log "Uso actual   : $cpuUso%" -Level $nivelCPU -LogFile $LogFile
 
-if ($tempCPU) {
-    $nivelTemp = if ($tempCPU -ge 90) { "ERROR" } elseif ($tempCPU -ge 75) { "WARNING" } else { "SUCCESS" }
-    Write-Log "Temperatura  : $tempCPU C" -Level $nivelTemp -LogFile $LogFile
-} else {
-    Write-Log "Temperatura  : No disponible (fabricante no expone el dato)" -LogFile $LogFile
-}
 Write-Blank -LogFile $LogFile
 
 # -- RAM --
@@ -273,7 +277,7 @@ foreach ($disco in $discosFisicos) {
         default     { "INFO"    }
     }
     $capacidadGB = [math]::Round($disco.Size / 1GB, 1)
-    Write-Log "Disco $($disco.DeviceId): $($disco.Model)  $capacidadGB GB  $($disco.MediaType)  $($disco.BusType)" -LogFile $LogFile
+    Write-Log "Disco $($disco.DeviceId) $($disco.Model)  $capacidadGB GB  $($disco.MediaType)  $($disco.BusType)" -LogFile $LogFile
     Write-Log "  SMART: $estadoStr" -Level $nivelDisco -LogFile $LogFile
     Write-Blank -LogFile $LogFile
 }
@@ -285,7 +289,7 @@ Write-Blank -LogFile $LogFile
 $discoActual = -1
 foreach ($p in $particiones) {
     if ($p.DiscoId -ne $discoActual) {
-        Write-Log "Disco $($p.DiscoId):" -LogFile $LogFile
+        Write-Log "Disco $($p.DiscoId)" -LogFile $LogFile
         $discoActual = $p.DiscoId
     }
     $usadoGB = [math]::Round($p.TotalGB - $p.LibreGB, 1)
@@ -334,40 +338,43 @@ Write-Blank -LogFile $LogFile
 
 # CPU
 $nivelCPUDiag = if ($cpuUso -ge 90) { "ERROR" } elseif ($cpuUso -ge 70) { "WARNING" } else { "SUCCESS" }
-$cpuNombre    = if ($cpu.Name.Length -gt 40) { $cpu.Name.Substring(0, 40) + "..." } else { $cpu.Name }
-Write-Log ("CPU            : {0} - Uso: {1}%" -f $cpuNombre, $cpuUso) -Level $nivelCPUDiag -LogFile $LogFile
-
-# Temperatura
-if ($tempCPU) {
-    $nivelTempDiag = if ($tempCPU -ge 90) { "ERROR" } elseif ($tempCPU -ge 75) { "WARNING" } else { "SUCCESS" }
-    Write-Log ("Temperatura    : {0} C" -f $tempCPU) -Level $nivelTempDiag -LogFile $LogFile
-} else {
-    Write-Log "Temperatura    : No disponible" -LogFile $LogFile
-}
+$cpuLimpio = $cpu.Name `
+    -replace '\s+with\s+.*graphics.*', '' `
+    -replace '\s+@\s+\d+(\.\d+)?\s*[G|M]Hz', '' `
+    -replace '\([R|TM|r|tm]\)', '' `
+    -replace '\s+', ' '
+$cpuNombre = if ($cpuLimpio.Length -gt 35) { $cpuLimpio.Substring(0, 35) + "..." } else { $cpuLimpio }
+$lineaCPU     = "{0,-15}: {1}" -f "CPU", "$cpuNombre - Uso: $cpuUso%"
+Write-Log $lineaCPU -Level $nivelCPUDiag -LogFile $LogFile
 
 # RAM
 $nivelRAMDiag = if ($ramPct -ge 90) { "ERROR" } elseif ($ramPct -ge 75) { "WARNING" } else { "SUCCESS" }
-Write-Log ("RAM            : {0} GB fisicos - {1}% en uso" -f $ramFisicaGB, $ramPct) -Level $nivelRAMDiag -LogFile $LogFile
-
-# Particiones
-foreach ($p in $particiones) {
-    $usadoPct = if ($p.TotalGB -gt 0) { [math]::Round((($p.TotalGB - $p.LibreGB) / $p.TotalGB) * 100) } else { 0 }
-    $nivelP   = if ($usadoPct -ge 90) { "ERROR" } elseif ($usadoPct -ge 75) { "WARNING" } else { "SUCCESS" }
-    $msgP     = if ($usadoPct -ge 90) { "Espacio critico" } elseif ($usadoPct -ge 75) { "Considerar limpieza" } else { "OK" }
-    Write-Log ("Disco {0}        : {1}% usado - {2}" -f $p.Unidad, $usadoPct, $msgP) -Level $nivelP -LogFile $LogFile
-}
+$lineaRam = "{0,-15}: {1}" -f "RAM", "$ramFisicaGB GB fisicos - $ramPct% en uso"
+Write-Log $lineaRam -Level $nivelRAMDiag -LogFile $LogFile
 
 # GPU
-Write-Log ("GPU            : {0} - VRAM: {1} GB" -f $gpu.Name, $gpuVRAM) -LogFile $LogFile
+$lineaGPU = "{0,-15}: {1}" -f "GPU", "$($gpu.Name) - VRAM: $gpuVRAM GB"
+Write-Log $lineaGPU -LogFile $LogFile
 
 # Bateria
 if ($hayBateria) {
     $nivelBatDiag = if ($bateria.EstimatedChargeRemaining -le 20) { "ERROR" } `
                     elseif ($bateria.EstimatedChargeRemaining -le 40) { "WARNING" } `
                     else { "SUCCESS" }
-    Write-Log ("Bateria        : {0}% - {1}" -f $bateria.EstimatedChargeRemaining, $estadoBat) -Level $nivelBatDiag -LogFile $LogFile
+    $lineaBat = "{0,-15}: {1}% - {2}" -f "Bateria", $bateria.EstimatedChargeRemaining, $estadoBat
+    Write-Log $lineaBat -Level $nivelBatDiag -LogFile $LogFile
 } else {
-    Write-Log "Bateria        : No aplica (Desktop)" -LogFile $LogFile
+    $lineaBat = "{0,-15}: {1}" -f "Bateria", "No aplica (Desktop)"
+    Write-Log $lineaBat -LogFile $LogFile
+}
+
+# Particiones
+foreach ($p in $particiones) {
+    $usadoPct = if ($p.TotalGB -gt 0) { [math]::Round((($p.TotalGB - $p.LibreGB) / $p.TotalGB) * 100) } else { 0 }
+    $nivelP   = if ($usadoPct -ge 90) { "ERROR" } elseif ($usadoPct -ge 75) { "WARNING" } else { "SUCCESS" }
+    $msgP     = if ($usadoPct -ge 90) { "Espacio critico" } elseif ($usadoPct -ge 75) { "Considerar limpieza" } else { "OK" }
+    $lineaPart = "{0,-15}: {1}% usado - {2}" -f "Disco $($p.Unidad)", $usadoPct, $msgP
+    Write-Log $lineaPart -Level $nivelP -LogFile $LogFile
 }
 
 # Servicios criticos
