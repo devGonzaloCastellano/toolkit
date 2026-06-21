@@ -11,7 +11,7 @@ Toolkit portable desarrollado en PowerShell para tareas de:
 Diseñado con un enfoque modular y portable, 
 pensado para asistencia técnica y troubleshooting en entornos Windows.
 
-Actualmente, el sistema se encuentra en su Versión 2 (v2.0.0).
+Actualmente, el sistema se encuentra en su Versión 2 (v2.1.0).
 
 ---
 
@@ -22,8 +22,8 @@ Actualmente, el sistema se encuentra en su Versión 2 (v2.0.0).
 2. Ejecutar `launcher.bat` como administrador
 3. Seleccionar la opción deseada desde el menú
 
-> El launcher solicita elevacion UAC automaticamente.
-> Todos los modulos corren en la misma ventana de PowerShell.
+> El launcher solicita elevación UAC automáticamente.
+> Todos los módulos corren en la misma ventana de PowerShell.
 ---
 
 ## Funcionalidades
@@ -232,7 +232,7 @@ y en Windows 11 validando:
  - Auditoría básica del sistema
  - Generación de logs automáticos
 
-### Versión 1.1.0 (Actual)
+### Versión 1.1.0 (Finalizada)
 - info_sistema: build detallado con UBR, último inicio legible,
 - RAM física real, reserva GPU, detalle por módulo,
 - discos con tipo HDD/SSD e interfaz, particiones agrupadas por disco
@@ -243,7 +243,7 @@ y en Windows 11 validando:
 - Timestamp de logs migrado a PowerShell en todos los scripts afectados
 - Supresión de ruido visual en logs de chkdsk y reparaciones
 
-### Versión 2.0.0 (Planificada)
+### Versión 2.0.0 (Actual)
 - Migración completa a PowerShell nativo (eliminación de Batch)
 - Modúlo compartido lib/Utils.ps1 con logging por niveles y colores
 - Plantilla uniforme para todos los modulos
@@ -257,19 +257,41 @@ y en Windows 11 validando:
 - Prefetch con advertencia y confirmación opcional
 - Progreso en tiempo real para SFC, DISM y chkdsk
 
-### Version 2.1.0 (Planificada)
-- Funciones de apagado, reinicio forzado y reinicio a BIOS
-- Exportación de reportes a HTML/PDF
-- Identificación de fabricante por MAC en mapa de red (OUI lookup)
-- Escaneo completo de Defender (ademas del rapido)
-- Encoding de salida de net, ipconfig en logs
-- Distinguir DLLs inexistentes vs DLLs que fallaron el registro en reparar_windows_update
-- Pulido de etiquetas de nivel ([WARN] vs [WARNING]) para alineación visual
-- Agregar procesos conocidos a lista blanca de procesos.ps1
-- Revisar Disk Cleanup en limpieza.ps1
-- Forzar InvariantCulture en todos los valores numéricos para evitar inconsistencia de separador decimal entre equipos con distinta configuración regional
-- Detectar unidades removibles (USB) en reporte_disco y omitir chkdsk o cambiar nivel a INFO para evitar falsos positivos con código 11
-- Detectar IP APIPA (169.254.x.x) en info_sistema y red, mostrar WARNING indicando que no hay conectividad real
+### Versión 2.1.0 (Actual)
+- Revisión completa de formato y consistencia visual de reportes
+- Incorporación de etiquetas NOTE en todos los módulos
+- Centralización de validación de conectividad mediante Test-InternetConnection()
+- Optimización y reducción de ruido visual en logs
+- Diagnóstico de sistema reorganizado para lectura rápida
+- Eliminación de métricas de temperatura no confiables
+- Incorporación de información detallada de placa madre
+- Incorporación de versión y fecha de BIOS
+- Diagnóstico general unificado y estandarizado
+- Mejoras en alineación visual de reportes
+- Corrección de inconsistencias entre módulos
+- Mejora general de mantenibilidad y experiencia de soporte técnico
+
+### Versión 2.2.0 (Planificada)
+- Exportación estructurada de reportes en JSON
+- Generación de reportes HTML
+- Generación de reportes PDF
+- Consolidación automática de múltiples reportes en un informe único
+- Identificación de fabricante por MAC (OUI Lookup) en mapa_red
+- Escaneo completo de Windows Defender
+- Mejoras de encoding para salida de herramientas nativas
+- Distinción entre DLL inexistente y DLL con error de registro en reparar_windows_update
+- Detección de IP APIPA (169.254.x.x)
+- Manejo mejorado de unidades removibles en reporte_disco
+- Forzar InvariantCulture en valores numéricos
+- Expansión de lista blanca de procesos conocidos
+
+### Versión 3.0.0 (Visión futura)
+- Motor de consolidación de auditorías
+- Informe técnico completo basado en JSON
+- Informe simplificado orientado al cliente
+- Sistema de recomendaciones automáticas
+- Evaluación integral de estado del equipo
+- Generación de informes profesionales para entrega post-servicio
 
 ---
 
@@ -293,6 +315,6 @@ con el objetivo de consolidar conocimientos en:
 
 ## Estado actual
 
-Version 2.0.0 finalizada.
+Version 2.1.0 finalizada.
 El proyecto continúa evolucionando mediante mejoras progresivas,
 refactorización y expansión de funcionalidades.
