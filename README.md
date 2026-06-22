@@ -271,7 +271,7 @@ y en Windows 11 validando:
 - Corrección de inconsistencias entre módulos
 - Mejora general de mantenibilidad y experiencia de soporte técnico
 
-### Versión 2.2.0 (Planificada)
+### Versión 3.0.0 (Planificada)
 - Exportación estructurada de reportes en JSON
 - Generación de reportes HTML
 - Generación de reportes PDF
@@ -285,7 +285,7 @@ y en Windows 11 validando:
 - Forzar InvariantCulture en valores numéricos
 - Expansión de lista blanca de procesos conocidos
 
-### Versión 3.0.0 (Visión futura)
+### Versión x.x.x (Visión futura)
 - Motor de consolidación de auditorías
 - Informe técnico completo basado en JSON
 - Informe simplificado orientado al cliente
