@@ -272,18 +272,14 @@ y en Windows 11 validando:
 - Mejora general de mantenibilidad y experiencia de soporte técnico
 
 ### Versión 3.0.0 (Planificada)
-- Exportación estructurada de reportes en JSON
-- Generación de reportes HTML
-- Generación de reportes PDF
-- Consolidación automática de múltiples reportes en un informe único
-- Identificación de fabricante por MAC (OUI Lookup) en mapa_red
-- Escaneo completo de Windows Defender
-- Mejoras de encoding para salida de herramientas nativas
-- Distinción entre DLL inexistente y DLL con error de registro en reparar_windows_update
+- reportes en JSON + HTML manteniendo los reportes actuales en .txt
+- Módulo shutdown para resetear equipo normalmente y a BIOS
+- Fix de falso positivo en unidades removibles (autodetección de unidad de origen)
 - Detección de IP APIPA (169.254.x.x)
-- Manejo mejorado de unidades removibles en reporte_disco
-- Forzar InvariantCulture en valores numéricos
-- Expansión de lista blanca de procesos conocidos
+- Externalizar listados hardcodeados dentro de los módulos
+- Auditoria de DLLs vigentes 
+- Re-categorización de procesos "desconocidos"
+- Estandarización de manejo de errores en los módulos (incluye forzar InvariantCulture globalmente)
 
 ### Versión x.x.x (Visión futura)
 - Motor de consolidación de auditorías
