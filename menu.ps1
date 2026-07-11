@@ -6,7 +6,7 @@
     compartidas y presenta el menu de navegacion principal desde el que se
     invocan todos los modulos disponibles.
 .NOTES
-    Version : 2.1.0
+    Version : 3.0.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -22,6 +22,12 @@ param(
 #region IMPORTS
 
 . "$PSScriptRoot\lib\Utils.ps1"
+
+#endregion
+
+#region CANCELACION GLOBAL
+
+Register-CancelHandler
 
 #endregion
 
@@ -43,7 +49,7 @@ Clear-Host
 
 #region CONSTANTES
 
-$VERSION     = "2.1.0"
+$VERSION     = "3.0.0"
 $SCRIPTS_DIR = Join-Path $PSScriptRoot "scripts"
 
 #endregion
