@@ -8,7 +8,7 @@
     Debe importarse via dot-sourcing al inicio de cada script:
         . "$PSScriptRoot\..\lib\Utils.ps1"
 .NOTES
-    Version : 2.1.0
+    Version : 3.0.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -307,5 +307,72 @@ function Test-InternetConnection {
         return $false
     }
 }
+
+#region CANCELACION GLOBAL
+
+<#
+.SYNOPSIS
+    Registra el manejador global de cancelacion (Ctrl+C) para toda la toolkit.
+.DESCRIPTION
+    Suscribe el evento CancelKeyPress de la consola via Register-ObjectEvent,
+    que es el mecanismo seguro para ejecutar cmdlets dentro del handler (a
+    diferencia de suscribirse directo al evento .NET, que corre en un hilo
+    separado y puede generar errores de pipeline).
+    Al dispararse, cancela la terminacion inmediata, limpia el reporte TXT
+    en curso (si existia) y finaliza la ejecucion de toda la toolkit.
+    Debe llamarse una unica vez, al inicio de menu.ps1, antes del loop principal.
+.EXAMPLE
+    Register-CancelHandler
+#>
+function Register-CancelHandler {
+    $global:CurrentModule  = $null
+    $global:CurrentTxtPath = $null
+
+    $null = Register-ObjectEvent -InputObject ([Console]) -EventName CancelKeyPress -Action {
+        $Event.SourceEventArgs.Cancel = $true
+
+        Write-Log "Ejecucion cancelada por el usuario (Ctrl+C) durante: $global:CurrentModule" -Level WARNING
+
+        if ($global:CurrentTxtPath -and (Test-Path $global:CurrentTxtPath)) {
+            Remove-Item $global:CurrentTxtPath -Force
+        }
+
+        Write-Blank
+        Write-Host "  Todos los procesos se han cancelado correctamente. Esta ventana se cerrara automaticamente." -ForegroundColor Yellow
+        Write-Blank
+
+        Start-Sleep -Seconds 3
+        Stop-Process -Id $PID -Force
+    }
+}
+
+<#
+.SYNOPSIS
+    Marca el modulo y el archivo TXT actualmente en ejecucion.
+.DESCRIPTION
+    Debe llamarse al inicio de cada modulo, inmediatamente despues de
+    Initialize-Environment, para que el manejador de cancelacion (Ctrl+C)
+    sepa que modulo esta corriendo y que archivo limpiar si se interrumpe.
+.PARAMETER ModuleName
+    Nombre del modulo en ejecucion (ej: "reporte_disco").
+.PARAMETER TxtPath
+    Ruta completa al archivo de log/reporte TXT en curso.
+.EXAMPLE
+    Set-CurrentExecution -ModuleName "reporte_disco" -TxtPath $env.LogFile
+#>
+function Set-CurrentExecution {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ModuleName,
+
+        [Parameter(Mandatory)]
+        [string]$TxtPath
+    )
+
+    $global:CurrentModule  = $ModuleName
+    $global:CurrentTxtPath = $TxtPath
+}
+
+#endregion
 
 #endregion
