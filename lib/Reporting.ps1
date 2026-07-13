@@ -12,6 +12,12 @@
     Proyecto: Portable Windows Toolkit
 #>
 
+#region CONSTANTES
+
+$script:ToolkitVersion = "3.0.0"
+
+#endregion
+
 #region NOMENCLATURA DE ARCHIVOS
 
 <#
@@ -91,7 +97,7 @@ function New-ModuleReport {
 
     return @{
         schemaVersion  = "1.0"
-        toolkitVersion = $ToolkitVersion
+        toolkitVersion = $script:ToolkitVersion
         module         = $ModuleName
         executionId    = (Get-Date -Format "yyyyMMdd-HHmmss")
         startTime      = (Get-Date -Format "o")
