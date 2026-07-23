@@ -89,22 +89,20 @@ function Get-ReportFileName {
 function New-ModuleReport {
     param(
         [Parameter(Mandatory)]
-        [string]$ModuleName,
-
-        [Parameter(Mandatory)]
-        [string]$ToolkitVersion
+        [string]$ModuleName
     )
 
+    $script:reportStartTime = Get-Date
+
     return @{
-        schemaVersion  = "1.0"
-        toolkitVersion = $script:ToolkitVersion
-        module         = $ModuleName
-        executionId    = (Get-Date -Format "yyyyMMdd-HHmmss")
-        startTime      = (Get-Date -Format "o")
-        endTime        = $null
-        status         = "OK"
-        data           = @{}
-        errors         = @()
+        schemaVersion   = "1.0"
+        toolkitVersion  = $script:ToolkitVersion
+        module          = $ModuleName
+        executionId     = (Get-Date -Format "yyyyMMdd-HHmmss")
+        durationSeconds = $null
+        status          = "OK"
+        data            = @{}
+        errors          = @()
     }
 }
 
@@ -130,8 +128,8 @@ function Complete-ModuleReport {
         [string]$Status
     )
 
-    $Report.endTime = (Get-Date -Format "o")
-    $Report.status  = $Status
+    $Report.durationSeconds = [math]::Round(((Get-Date) - $script:reportStartTime).TotalSeconds, 2)
+    $Report.status = $Status
 
     return $Report
 }
