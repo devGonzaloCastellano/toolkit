@@ -159,3 +159,53 @@ function Save-ModuleReport {
 }
 
 #endregion
+
+#region MANEJO DE ERRORES
+
+<#
+.SYNOPSIS
+    Agrega un error al reporte de un modulo, distinguiendo su origen.
+.DESCRIPTION
+    Registra un error dentro del array 'errors' del reporte, sin
+    interrumpir la ejecucion del modulo. Distingue si el error es
+    una falla del toolkit (TOOLKIT) o un hallazgo real sobre el
+    equipo evaluado (SYSTEM), para que ambos tipos puedan tratarse
+    de forma distinta en consolidacion e informes futuros.
+.PARAMETER Report
+    Objeto de reporte generado por New-ModuleReport.
+.PARAMETER Message
+    Descripcion del error o hallazgo.
+.PARAMETER Severity
+    Nivel del error: WARNING o ERROR.
+.PARAMETER Source
+    Origen del error: TOOLKIT (fallo del script) o SYSTEM (hallazgo
+    sobre el equipo evaluado).
+.EXAMPLE
+    Add-ReportError -Report $report -Message "Fallo al leer particiones" -Severity ERROR -Source TOOLKIT
+    Add-ReportError -Report $report -Message "Unidad D con errores menores" -Severity WARNING -Source SYSTEM
+#>
+function Add-ReportError {
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Report,
+
+        [Parameter(Mandatory)]
+        [string]$Message,
+
+        [ValidateSet("WARNING", "ERROR")]
+        [string]$Severity = "ERROR",
+
+        [Parameter(Mandatory)]
+        [ValidateSet("TOOLKIT", "SYSTEM")]
+        [string]$Source
+    )
+
+    $Report.errors += @{
+        message  = $Message
+        severity = $Severity
+        source   = $Source
+    }
+}
+
+#endregion
+
