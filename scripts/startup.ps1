@@ -7,7 +7,7 @@
     de inicio del usuario y del sistema, y el Programador de Tareas.
     No desactiva ni modifica nada, solo reporta para auditoria.
 .NOTES
-    Version : 2.1.0
+    Version : 3.0.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -23,6 +23,7 @@ param(
 #region IMPORTS
 
 . "$PSScriptRoot\..\lib\Utils.ps1"
+. "$PSScriptRoot\..\lib\Reporting.ps1"
 
 #endregion
 
@@ -38,6 +39,12 @@ if (-not $NoElevation) {
 
 $envInfo = Initialize-Environment -LogDir $LogDir -ModuleName "startup"
 $LogFile = $envInfo.LogFile
+
+Set-CurrentExecution -ModuleName "startup" -TxtPath $LogFile
+
+$reportsDir = Join-Path (Split-Path $LogDir -Parent) "reports"
+$reportFile = Get-ReportFileName -ReportsDir $reportsDir -ModuleName "startup"
+$script:report = New-ModuleReport -ModuleName "startup"
 
 #endregion
 
@@ -65,6 +72,8 @@ function Get-RegistryStartup {
                     }
                 }
     } catch {
+        Write-Log "No se pudo leer el registro ($RegistryPath): $($_.Exception.Message)" -Level ERROR -LogFile $LogFile
+        Add-ReportError -Report $script:report -Message "Fallo al leer $RegistryPath : $($_.Exception.Message)" -Severity ERROR -Source TOOLKIT
         return @()
     }
 }
@@ -82,13 +91,20 @@ function Get-FolderStartup {
 
     if (-not (Test-Path $FolderPath)) { return @() }
 
-    Get-ChildItem -Path $FolderPath -ErrorAction SilentlyContinue |
-            ForEach-Object {
-                [PSCustomObject]@{
-                    Nombre  = $_.Name
-                    Comando = $_.FullName
+    try{
+        Get-ChildItem -Path $FolderPath -ErrorAction SilentlyContinue |
+                ForEach-Object {
+                    [PSCustomObject]@{
+                        Nombre  = $_.Name
+                        Comando = $_.FullName
+                    }
                 }
-            }
+    }catch{
+        Write-Log "No se pudo leer la carpeta ($FolderPath): $($_.Exception.Message)" -Level ERROR -LogFile $LogFile
+        Add-ReportError -Report $script:report -Message "Fallo al leer $FolderPath : $($_.Exception.Message)" -Severity ERROR -Source TOOLKIT
+        return @()
+    }
+
 }
 
 <#
@@ -112,6 +128,8 @@ function Get-ScheduledStartup {
                     }
                 }
     } catch {
+        Write-Log "No se pudieron obtener las tareas programadas: $($_.Exception.Message)" -Level ERROR -LogFile $LogFile
+        Add-ReportError -Report $script:report -Message "Fallo al obtener tareas programadas: $($_.Exception.Message)" -Severity ERROR -Source TOOLKIT
         return @()
     }
 }
@@ -188,113 +206,144 @@ function Get-CommandDisplay {
 
 #endregion
 
-#region RECOLECCION DE DATOS
+try {
 
-$startupHKCU      = Get-RegistryStartup "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
-$startupHKLM      = Get-RegistryStartup "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
-$startupUserDir   = Get-FolderStartup "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"
-$startupSysDir    = Get-FolderStartup "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
-$startupScheduled = Get-ScheduledStartup
+    #region RECOLECCION DE DATOS
 
-$totalHKCU      = @($startupHKCU).Count
-$totalHKLM      = @($startupHKLM).Count
-$totalUserDir   = @($startupUserDir).Count
-$totalSysDir    = @($startupSysDir).Count
+    $startupHKCU      = @(Get-RegistryStartup "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run")
+    $startupHKLM      = @(Get-RegistryStartup "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run")
+    $startupUserDir   = @(Get-FolderStartup "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup")
+    $startupSysDir    = @(Get-FolderStartup "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp")
+    $startupScheduled = @(Get-ScheduledStartup)
 
-$runningTasks   = @($startupScheduled | Where-Object Estado -eq "Running")
-$readyTasks     = @($startupScheduled | Where-Object Estado -eq "Ready")
+    $totalHKCU      = @($startupHKCU).Count
+    $totalHKLM      = @($startupHKLM).Count
+    $totalUserDir   = @($startupUserDir).Count
+    $totalSysDir    = @($startupSysDir).Count
 
-$totalRunning   = $runningTasks.Count
-$totalReady     = $readyTasks.Count
+    $runningTasks   = @($startupScheduled | Where-Object Estado -eq "Running")
+    $readyTasks     = @($startupScheduled | Where-Object Estado -eq "Ready")
 
-#endregion
+    $totalRunning   = $runningTasks.Count
+    $totalReady     = $readyTasks.Count
 
-#region PRESENTACION
+    #endregion
 
-Write-Section "PROGRAMAS AL INICIO DE WINDOWS" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "Solo muestra. No desactiva ni modifica nada." -Level NOTE -LogFile $LogFile
-Write-Blank -LogFile $LogFile
+    #region PRESENTACION
 
-# -- Registro usuario actual --
-Write-Section "REGISTRO - USUARIO ACTUAL" -LogFile $LogFile
-Write-Log "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Level NOTE -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "Entradas encontradas: $totalHKCU" -Level INFO -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Show-StartupEntries -Entradas $startupHKCU
-Write-Blank -LogFile $LogFile
+    Write-Section "PROGRAMAS AL INICIO DE WINDOWS" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Write-Log "Solo muestra. No desactiva ni modifica nada." -Level NOTE -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
 
-# -- Registro sistema --
-Write-Section "REGISTRO - SISTEMA" -LogFile $LogFile
-Write-Log "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Level NOTE -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "Entradas encontradas: $totalHKLM" -Level INFO -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Show-StartupEntries -Entradas $startupHKLM
-Write-Blank -LogFile $LogFile
+    # -- Registro usuario actual --
+    Write-Section "REGISTRO - USUARIO ACTUAL" -LogFile $LogFile
+    Write-Log "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Level NOTE -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Write-Log "Entradas encontradas: $totalHKCU" -Level INFO -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Show-StartupEntries -Entradas $startupHKCU
+    Write-Blank -LogFile $LogFile
 
-# -- Carpeta inicio usuario --
-Write-Section "CARPETA INICIO - USUARIO" -LogFile $LogFile
-Write-Log "Origen: Carpeta de inicio del usuario" -Level NOTE -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "Entradas encontradas: $totalUserDir" -Level INFO -LogFile $LogFile
-Show-StartupEntries -Entradas $startupUserDir
-Write-Blank -LogFile $LogFile
+    # -- Registro sistema --
+    Write-Section "REGISTRO - SISTEMA" -LogFile $LogFile
+    Write-Log "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Level NOTE -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Write-Log "Entradas encontradas: $totalHKLM" -Level INFO -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Show-StartupEntries -Entradas $startupHKLM
+    Write-Blank -LogFile $LogFile
 
-# -- Carpeta inicio sistema --
-Write-Section "CARPETA INICIO - SISTEMA" -LogFile $LogFile
-Write-Log "Origen: Carpeta de inicio del sistema" -Level NOTE -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "Entradas encontradas: $totalSysDir" -Level INFO -LogFile $LogFile
-Show-StartupEntries -Entradas $startupSysDir
-Write-Blank -LogFile $LogFile
+    # -- Carpeta inicio usuario --
+    Write-Section "CARPETA INICIO - USUARIO" -LogFile $LogFile
+    Write-Log "Origen: Carpeta de inicio del usuario" -Level NOTE -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Write-Log "Entradas encontradas: $totalUserDir" -Level INFO -LogFile $LogFile
+    Show-StartupEntries -Entradas $startupUserDir
+    Write-Blank -LogFile $LogFile
 
-# -- Tareas programadas --
-Write-Section "TAREAS PROGRAMADAS AL INICIO" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "Tareas en ejecucion: $totalRunning" -Level SUCCESS -LogFile $LogFile
-Write-Log "Tareas preparadas : $totalReady" -Level INFO -LogFile $LogFile
-Write-Blank -LogFile $LogFile
+    # -- Carpeta inicio sistema --
+    Write-Section "CARPETA INICIO - SISTEMA" -LogFile $LogFile
+    Write-Log "Origen: Carpeta de inicio del sistema" -Level NOTE -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Write-Log "Entradas encontradas: $totalSysDir" -Level INFO -LogFile $LogFile
+    Show-StartupEntries -Entradas $startupSysDir
+    Write-Blank -LogFile $LogFile
 
-# -- Tareas en ejecucion --
-Write-Section "TAREAS EN EJECUCION" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Show-StartupEntries -Entradas $runningTasks -ConEstado
-Write-Blank -LogFile $LogFile
+    # -- Tareas programadas --
+    Write-Section "TAREAS PROGRAMADAS AL INICIO" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Write-Log "Tareas en ejecucion: $totalRunning" -Level SUCCESS -LogFile $LogFile
+    Write-Log "Tareas preparadas : $totalReady" -Level INFO -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
 
-# -- Tareas preparadas --
-Write-Section "TAREAS PREPARADAS" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Show-StartupEntries -Entradas $readyTasks -ConEstado
-Write-Blank -LogFile $LogFile
+    # -- Tareas en ejecucion --
+    Write-Section "TAREAS EN EJECUCION" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Show-StartupEntries -Entradas $runningTasks -ConEstado
+    Write-Blank -LogFile $LogFile
 
-#endregion
+    # -- Tareas preparadas --
+    Write-Section "TAREAS PREPARADAS" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Show-StartupEntries -Entradas $readyTasks -ConEstado
+    Write-Blank -LogFile $LogFile
 
-#region REFERENCIA DE COMANDOS
+    #endregion
 
-Write-Section "REFERENCIA DE COMANDOS" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "Para deshabilitar una entrada del registro:" -Level NOTE -LogFile $LogFile
-Write-Log "  Remove-ItemProperty -Path 'HKCU:\...\Run' -Name 'NombrePrograma'" -Level NOTE -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "Para deshabilitar una tarea programada:" -Level NOTE -LogFile $LogFile
-Write-Log "  Disable-ScheduledTask -TaskName 'NombreTarea'" -Level NOTE -LogFile $LogFile
-Write-Blank -LogFile $LogFile
+    #region REFERENCIA DE COMANDOS
 
-#endregion
+    Write-Section "REFERENCIA DE COMANDOS" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Write-Log "Para deshabilitar una entrada del registro:" -Level NOTE -LogFile $LogFile
+    Write-Log "  Remove-ItemProperty -Path 'HKCU:\...\Run' -Name 'NombrePrograma'" -Level NOTE -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Write-Log "Para deshabilitar una tarea programada:" -Level NOTE -LogFile $LogFile
+    Write-Log "  Disable-ScheduledTask -TaskName 'NombreTarea'" -Level NOTE -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
 
-#region RESUMEN
-Write-Section "RESUMEN" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
+    #endregion
 
-Write-Log ("Registro usuario..... {0}" -f $totalHKCU) -Level INFO -LogFile $LogFile
-Write-Log ("Registro sistema..... {0}" -f $totalHKLM) -Level INFO -LogFile $LogFile
-Write-Log ("Inicio usuario....... {0}" -f $totalUserDir) -Level INFO -LogFile $LogFile
-Write-Log ("Inicio sistema....... {0}" -f $totalSysDir) -Level INFO -LogFile $LogFile
-Write-Log ("Tareas Running....... {0}" -f $totalRunning) -Level SUCCESS -LogFile $LogFile
-Write-Log ("Tareas Ready......... {0}" -f $totalReady) -Level INFO -LogFile $LogFile
-Write-Blank -LogFile $LogFile
+    #region RESUMEN
+
+    Write-Section "RESUMEN" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    Write-Log ("Registro usuario..... {0}" -f $totalHKCU) -Level INFO -LogFile $LogFile
+    Write-Log ("Registro sistema..... {0}" -f $totalHKLM) -Level INFO -LogFile $LogFile
+    Write-Log ("Inicio usuario....... {0}" -f $totalUserDir) -Level INFO -LogFile $LogFile
+    Write-Log ("Inicio sistema....... {0}" -f $totalSysDir) -Level INFO -LogFile $LogFile
+    Write-Log ("Tareas Running....... {0}" -f $totalRunning) -Level SUCCESS -LogFile $LogFile
+    Write-Log ("Tareas Ready......... {0}" -f $totalReady) -Level INFO -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    #endregion
+
+    #region REPORTE
+
+    $script:report.data = @{
+        registryHKCU      = $startupHKCU
+        registryHKLM      = $startupHKLM
+        folderUserStartup = $startupUserDir
+        folderSystemStartup = $startupSysDir
+        scheduledRunning  = $runningTasks
+        scheduledReady    = $readyTasks
+    }
+
+    $status = if (@($script:report.errors).Count -gt 0) { "ERROR" } else { "OK" }
+    $script:report = Complete-ModuleReport -Report $script:report -Status $status
+
+    #endregion
+
+} catch {
+    Write-Log "Error fatal en el modulo: $($_.Exception.Message)" -Level ERROR -LogFile $LogFile
+    Add-ReportError -Report $script:report -Message $_.Exception.Message -Severity ERROR -Source TOOLKIT
+    $script:report = Complete-ModuleReport -Report $script:report -Status "ERROR"
+} finally {
+    Save-ModuleReport -Report $script:report -ReportFile $reportFile
+}
+
+#region SALIDA
 
 Write-Section -LogFile $LogFile
 Write-Log "Log guardado en: $LogFile" -LogFile $LogFile
