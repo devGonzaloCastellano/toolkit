@@ -6,7 +6,7 @@
     de firmas de antivirus y antispyware, y opcionalmente ejecuta un escaneo
     rapido del sistema detectando amenazas activas.
 .NOTES
-    Version : 2.1.0
+    Version : 3.0.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -22,6 +22,7 @@ param(
 #region IMPORTS
 
 . "$PSScriptRoot\..\lib\Utils.ps1"
+. "$PSScriptRoot\..\lib\Reporting.ps1"
 
 #endregion
 
@@ -38,6 +39,12 @@ if (-not $NoElevation) {
 $envInfo = Initialize-Environment -LogDir $LogDir -ModuleName "defender"
 $LogFile = $envInfo.LogFile
 
+Set-CurrentExecution -ModuleName "defender" -TxtPath $LogFile
+
+$reportsDir = Join-Path (Split-Path $LogDir -Parent) "reports"
+$reportFile = Get-ReportFileName -ReportsDir $reportsDir -ModuleName "defender"
+$script:report = New-ModuleReport -ModuleName "defender"
+
 #endregion
 
 #region FUNCIONES INTERNAS
@@ -52,7 +59,38 @@ function Get-DefenderStatus {
     try {
         return Get-MpComputerStatus -ErrorAction Stop
     } catch {
+        Write-Log "No se pudo obtener el estado de Windows Defender: $($_.Exception.Message)" -Level ERROR -LogFile $LogFile
+        Add-ReportError -Report $script:report -Message "Fallo al obtener estado de Defender: $($_.Exception.Message)" -Severity ERROR -Source TOOLKIT
         return $null
+    }
+}
+
+<#
+.SYNOPSIS
+    Genera una version resumida y plana del estado de Windows Defender.
+.DESCRIPTION
+    Extrae unicamente los campos relevantes de un objeto CIM devuelto por
+    Get-MpComputerStatus, descartando toda la metadata interna (CimClass,
+    CimSystemProperties, Qualifiers, etc.) que no aporta valor al reporte
+    y que de incluirse generaria un JSON excesivamente pesado.
+.PARAMETER Status
+    Objeto CimInstance retornado por Get-MpComputerStatus (via Get-DefenderStatus).
+.OUTPUTS
+    [hashtable] con los campos relevantes, o $null si Status es $null.
+#>
+function Get-DefenderStatusSummary {
+    param($Status)
+
+    if (-not $Status) { return $null }
+
+    return @{
+        realTimeProtection   = $Status.RealTimeProtectionEnabled
+        antivirusEnabled     = $Status.AntivirusEnabled
+        antispywareEnabled   = $Status.AntispywareEnabled
+        signatureVersion     = $Status.AntivirusSignatureVersion
+        lastSignatureUpdate  = $Status.AntivirusSignatureLastUpdated.ToString("yyyy-MM-dd HH:mm")
+        quickScanAgeDays     = $Status.QuickScanAge
+        fullScanAgeDays      = $Status.FullScanAge
     }
 }
 
@@ -75,117 +113,179 @@ function Show-DefenderStatus {
                  elseif ($Status.FullScanAge -eq 0) { "Hoy" } `
                  else { "Hace $($Status.FullScanAge) dia/s" }
 
-    Write-Log "Proteccion en tiempo real : $($Status.RealTimeProtectionEnabled)" -LogFile $LogFile
-    Write-Log "Antivirus habilitado      : $($Status.AntivirusEnabled)"          -LogFile $LogFile
-    Write-Log "Antispyware habilitado    : $($Status.AntispywareEnabled)"         -LogFile $LogFile
-    Write-Log "Version de firma AV       : $($Status.AntivirusSignatureVersion)"  -LogFile $LogFile
-    Write-Log "Ultima actualizacion      : $($Status.AntivirusSignatureLastUpdated)" -LogFile $LogFil
-    Write-Log "Ultimo escaneo rapido     : $ultimoRapido"                          -LogFile $LogFile
-    Write-Log "Ultimo escaneo completo   : $ultimoEscaneo"                         -LogFile $LogFile
+    Write-Log "Proteccion en tiempo real : $($Status.RealTimeProtectionEnabled)"       -LogFile $LogFile
+    Write-Log "Antivirus habilitado      : $($Status.AntivirusEnabled)"                -LogFile $LogFile
+    Write-Log "Antispyware habilitado    : $($Status.AntispywareEnabled)"              -LogFile $LogFile
+    Write-Log "Version de firma AV       : $($Status.AntivirusSignatureVersion)"       -LogFile $LogFile
+    Write-Log "Ultima actualizacion      : $($Status.AntivirusSignatureLastUpdated)"   -LogFile $LogFile
+    Write-Log "Ultimo escaneo rapido     : $ultimoRapido"                              -LogFile $LogFile
+    Write-Log "Ultimo escaneo completo   : $ultimoEscaneo"                             -LogFile $LogFile
+
+    if (-not $Status.RealTimeProtectionEnabled -or -not $Status.AntivirusEnabled) {
+        Add-ReportError -Report $script:report -Message "Proteccion en tiempo real o antivirus desactivado" -Severity WARNING -Source SYSTEM
+    }
+
 }
 
 #endregion
 
-#region RECOLECCION DE DATOS INICIAL
+try{
 
-$statusPrevio = Get-DefenderStatus
+    #region RECOLECCION DE DATOS INICIAL
 
-#endregion
+    $statusPrevio = Get-DefenderStatus
+    $statusPrevioResumen = Get-DefenderStatusSummary -Status $statusPrevio
 
-#region LOGICA PRINCIPAL
+    #endregion
 
-Write-Section "WINDOWS DEFENDER" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
+    #region ESTADO ACTUAL
 
-# -- Seccion 1: Estado actual --
-Write-Section "ESTADO ACTUAL" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Show-DefenderStatus -Status $statusPrevio
-Write-Blank -LogFile $LogFile
-
-# -- Seccion 2: Testeo de Conectividad
-Write-Section "Test de Conectividad" -LogFile $LogFile
-
-Write-Blank -LogFile $LogFile
-if (-not (Test-InternetConnection)) {
-    Write-Log "Sin conexion a internet. Este modulo requiere conexion activa." -Level ERROR -LogFile $LogFile
-    Write-Blank -LogFile $LogFile
-    Invoke-Pause exit 1 }
-Write-Log "Conexion a internet verificada." -Level SUCCESS -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-
-# -- Seccion 3: Actualizacion de definiciones --
-Write-Section "ACTUALIZANDO DEFINICIONES" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "Descargando ultimas firmas desde Microsoft..." -LogFile $LogFile
-Write-Log "Puede tardar unos minutos." -Level WARNING -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-
-try {
-    Update-MpSignature -ErrorAction Stop
-    Write-Log "Actualizacion de firmas completada." -Level SUCCESS -LogFile $LogFile
-} catch {
-    Write-Log "Error al actualizar firmas: $_" -Level ERROR -LogFile $LogFile
-}
-Write-Blank -LogFile $LogFile
-
-# -- Seccion 4: Estado post-actualizacion --
-$statusPost = Get-DefenderStatus
-
-Write-Section "ESTADO POST-ACTUALIZACION" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-
-if ($statusPost) {
-    Write-Log "Version de firma AV  : $($statusPost.AntivirusSignatureVersion)"     -LogFile $LogFile
-    Write-Log "Ultima actualizacion : $($statusPost.AntivirusSignatureLastUpdated)" -LogFile $LogFile
-} else {
-    Write-Log "No se pudo obtener estado post-actualizacion." -Level WARNING -LogFile $LogFile
-}
-Write-Blank -LogFile $LogFile
-
-# -- Seccion 4: Escaneo rapido opcional --
-Write-Section "ESCANEO RAPIDO" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "Un escaneo rapido revisa memoria, registro y carpetas de inicio." -Level NOTE -LogFile $LogFile
-Write-Log "Tarda entre 5 y 15 minutos." -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-
-$respuesta = Read-Host "   Ejecutar escaneo rapido ahora? (s/n)"
-
-if ($respuesta -eq "s") {
-    Write-Blank -LogFile $LogFile
-    Write-Log "Iniciando escaneo rapido. No cerrar esta ventana..." -Level WARNING -LogFile $LogFile
+    Write-Section "WINDOWS DEFENDER" -LogFile $LogFile
     Write-Blank -LogFile $LogFile
 
+    Write-Section "ESTADO ACTUAL" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Show-DefenderStatus -Status $statusPrevio
+    Write-Blank -LogFile $LogFile
+
+    #endregion
+
+    #region TEST DE CONECTIVIDAD
+
+    Write-Section "Test de Conectividad" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    if (-not (Test-InternetConnection)) {
+        Write-Log "Sin conexion a internet. Este modulo requiere conexion activa." -Level ERROR -LogFile $LogFile
+        Add-ReportError -Report $script:report -Message "Sin conexion a internet, modulo interrumpido" -Severity ERROR -Source TOOLKIT
+
+        $script:report.data = @{
+        statusPrevio = $statusPrevio
+    }
+    $script:report = Complete-ModuleReport -Report $script:report -Status "ERROR"
+    Save-ModuleReport -Report $script:report -ReportFile $reportFile
+
+    Write-Blank -LogFile $LogFile
+    Invoke-Pause
+    exit 1
+    }
+
+    Write-Log "Conexion a internet verificada." -Level SUCCESS -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    #endregion
+
+    #region ACTUALIZACION DE DEFINICIONES
+
+    Write-Section "ACTUALIZANDO DEFINICIONES" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Write-Log "Descargando ultimas firmas desde Microsoft..." -LogFile $LogFile
+    Write-Log "Puede tardar unos minutos." -Level WARNING -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    $actualizacionOk = $true
     try {
-        Start-MpScan -ScanType QuickScan -ErrorAction Stop
-        Write-Log "Escaneo completado." -Level SUCCESS -LogFile $LogFile
-    } catch {
-        Write-Log "Error durante el escaneo: $_" -Level ERROR -LogFile $LogFile
+        Update-MpSignature -ErrorAction Stop
+        Write-Log "Actualizacion de firmas completada." -Level SUCCESS -LogFile $LogFile
+    }catch {
+        Write-Log "Error al actualizar firmas: $_" -Level ERROR -LogFile $LogFile
+        Add-ReportError -Report $script:report -Message "Fallo al actualizar firmas: $($_.Exception.Message)" -Severity ERROR -Source TOOLKIT
+        $actualizacionOk = $false
     }
-
-    # Amenazas detectadas
-    Write-Blank -LogFile $LogFile
-    Write-Section "AMENAZAS DETECTADAS" -LogFile $LogFile
     Write-Blank -LogFile $LogFile
 
-    $amenazas = Get-MpThreatDetection -ErrorAction SilentlyContinue
+    #endregion
 
-    if ($amenazas) {
-        foreach ($amenaza in $amenazas) {
-            Write-Log "AMENAZA: $($amenaza.ThreatName) - $($amenaza.Resources)" -Level ERROR -LogFile $LogFile
-        }
+    #region ESTADO POST-ACTUALIZACION
+
+    $statusPost = Get-DefenderStatus
+    $statusPostResumen = Get-DefenderStatusSummary -Status $statusPost
+
+    Write-Section "ESTADO POST-ACTUALIZACION" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    if ($statusPost) {
+        Write-Log "Version de firma AV  : $($statusPost.AntivirusSignatureVersion)"     -LogFile $LogFile
+        Write-Log "Ultima actualizacion : $($statusPost.AntivirusSignatureLastUpdated)" -LogFile $LogFile
     } else {
-        Write-Log "Sin amenazas detectadas." -Level SUCCESS -LogFile $LogFile
+        Write-Log "No se pudo obtener estado post-actualizacion." -Level WARNING -LogFile $LogFile
+    }
+    Write-Blank -LogFile $LogFile
+
+    #endregion
+
+    #region ESCANEO RAPIDO
+    Write-Section "ESCANEO RAPIDO" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Write-Log "Un escaneo rapido revisa memoria, registro y carpetas de inicio." -Level NOTE -LogFile $LogFile
+    Write-Log "Tarda entre 5 y 15 minutos." -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    $respuesta = Read-Host "   Ejecutar escaneo rapido ahora? (s/n)"
+
+    $escaneoEjecutado = $false
+    $amenazas = @()
+
+    if ($respuesta -eq "s") {
+        Write-Blank -LogFile $LogFile
+        Write-Log "Iniciando escaneo rapido. No cerrar esta ventana..." -Level WARNING -LogFile $LogFile
+        Write-Blank -LogFile $LogFile
+
+        try {
+            Start-MpScan -ScanType QuickScan -ErrorAction Stop
+            Write-Log "Escaneo completado." -Level SUCCESS -LogFile $LogFile
+            $escaneoEjecutado = $true
+        } catch {
+            Write-Log "Error durante el escaneo: $($_.Exception.Message)" -Level ERROR -LogFile $LogFile
+            Add-ReportError -Report $script:report -Message "Fallo al ejecutar quick scan: $($_.Exception.Message)" -Severity ERROR -Source TOOLKIT
+        }
+
+        Write-Blank -LogFile $LogFile
+        Write-Section "AMENAZAS DETECTADAS" -LogFile $LogFile
+        Write-Blank -LogFile $LogFile
+
+        $amenazas = @(Get-MpThreatDetection -ErrorAction SilentlyContinue)
+
+        if (@($amenazas).Count -gt 0) {
+            foreach ($amenaza in $amenazas) {
+                Write-Log "AMENAZA: $($amenaza.ThreatName) - $($amenaza.Resources)" -Level ERROR -LogFile $LogFile
+                Add-ReportError -Report $script:report -Message "Amenaza detectada: $($amenaza.ThreatName)" -Severity ERROR -Source SYSTEM
+            }
+        } else {
+            Write-Log "Sin amenazas detectadas." -Level SUCCESS -LogFile $LogFile
+        }
+
+    } else {
+        Write-Log "Escaneo omitido." -LogFile $LogFile
     }
 
-} else {
-    Write-Log "Escaneo omitido." -LogFile $LogFile
+    #endregion
+
+    #region REPORTE
+
+    $script:report.data = @{
+        statusPrevio      = $statusPrevioResumen
+        statusPost        = $statusPostResumen
+        actualizacionOk   = $actualizacionOk
+        escaneoEjecutado  = $escaneoEjecutado
+        amenazas          = $amenazas
+    }
+
+    $status = if (@($script:report.errors | Where-Object { $_.severity -eq "ERROR" }).Count -gt 0) { "ERROR" } else { "OK" }
+    $script:report = Complete-ModuleReport -Report $script:report -Status $status
+
+    #endregion
+
+} catch {
+    Write-Log "Error fatal en el modulo: $($_.Exception.Message)" -Level ERROR -LogFile $LogFile
+    Add-ReportError -Report $script:report -Message $_.Exception.Message -Severity ERROR -Source TOOLKIT
+    $script:report = Complete-ModuleReport -Report $script:report -Status "ERROR"
+
+} finally {
+    Save-ModuleReport -Report $script:report -ReportFile $reportFile
 }
 
-#endregion
-
-#region RESUMEN
+#region SALIDA
 
 Write-Blank -LogFile $LogFile
 Write-Section -LogFile $LogFile
