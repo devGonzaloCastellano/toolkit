@@ -45,7 +45,7 @@ function Write-Log {
         SUCCESS = "Green"
         WARNING = "Yellow"
         ERROR   = "Red"
-        NOTE    = "DarkMagenta"
+        NOTE    = "Blue"
     }
 
     $timestamp = Get-Date -Format "HH:mm"
@@ -94,12 +94,12 @@ function Write-Section {
     )
 
     if ($Title) {
-        $padTotal = 50 - $Title.Length - 2
+        $padTotal = 80 - $Title.Length - 2
         $padLeft  = [math]::Floor($padTotal / 2)
         $padRight = $padTotal - $padLeft
         $line     = "=" * $padLeft + " $Title " + "=" * $padRight
     } else {
-        $line = "=" * 50
+        $line = "=" * 80
     }
 
     Write-Host $line -ForegroundColor Cyan
