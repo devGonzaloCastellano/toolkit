@@ -8,7 +8,7 @@
     particiones, red, servicios criticos y usuario actual.
     Finaliza con un diagnostico general del estado del equipo.
 .NOTES
-    Version : 2.1.0
+    Version : 3.0.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -24,6 +24,7 @@ param(
 #region IMPORTS
 
 . "$PSScriptRoot\..\lib\Utils.ps1"
+. "$PSScriptRoot\..\lib\Reporting.ps1"
 
 #endregion
 
@@ -40,73 +41,119 @@ if (-not $NoElevation) {
 $envInfo = Initialize-Environment -LogDir $LogDir -ModuleName "info_sistema"
 $LogFile = $envInfo.LogFile
 
+Set-CurrentExecution -ModuleName "info_sistema" -TxtPath $LogFile
+
+$reportsDir = Join-Path (Split-Path $LogDir -Parent) "reports"
+$reportFile = Get-ReportFileName -ReportsDir $reportsDir -ModuleName "info_sistema"
+$script:report = New-ModuleReport -ModuleName "info_sistema"
+
 #endregion
 
-#region RECOLECCION DE DATOS
+#region FUNCIONES INTERNAS
 
-Write-Log "Relevando informacion del sistema..." -LogFile $LogFile
-Write-Log "Esto puede tardar unos segundos." -Level WARNING -LogFile $LogFile
-Write-Blank -LogFile $LogFile
+<#
+.SYNOPSIS
+    Determina el nivel de severidad (SUCCESS/WARNING/ERROR) segun umbrales.
+.DESCRIPTION
+    Centraliza la logica de clasificacion por porcentaje/valor de uso,
+    evitando repetir los mismos umbrales en la seccion de presentacion
+    y en el diagnostico general.
+.PARAMETER Value
+    Valor numerico a evaluar (ej: porcentaje de uso).
+.PARAMETER WarningThreshold
+    A partir de que valor se considera WARNING.
+.PARAMETER ErrorThreshold
+    A partir de que valor se considera ERROR.
+.OUTPUTS
+    [string] "SUCCESS", "WARNING" o "ERROR".
+.EXAMPLE
+    Get-UsageLevel -Value 92 -WarningThreshold 75 -ErrorThreshold 90   # "ERROR"
+#>
+function Get-UsageLevel {
+    param(
+        [Parameter(Mandatory)]
+        [double]$Value,
 
-# -- Sistema Operativo --
-$os       = Get-CimInstance Win32_OperatingSystem  -ErrorAction SilentlyContinue
-$cs       = Get-CimInstance Win32_ComputerSystem   -ErrorAction SilentlyContinue
-$mb       = Get-CimInstance Win32_BaseBoard        -ErrorAction SilentlyContinue
-$bios     = Get-CimInstance Win32_BIOS             -ErrorAction SilentlyContinue
+        [Parameter(Mandatory)]
+        [double]$WarningThreshold,
 
-# -- UBR (Update Build Revision) para version exacta del parche --
-$ubr = try {
-    (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -Name UBR -ErrorAction Stop).UBR
-} catch { "N/A" }
+        [Parameter(Mandatory)]
+        [double]$ErrorThreshold
+    )
 
-# -- Uptime --
-$uptime    = if ($os) { (Get-Date) - $os.LastBootUpTime } else { $null }
-$uptimeStr = if ($uptime) {
-    "{0}d {1}h {2}m" -f [math]::Floor($uptime.TotalDays), $uptime.Hours, $uptime.Minutes
-} else { "N/A" }
+    if ($Value -ge $ErrorThreshold)   { return "ERROR" }
+    if ($Value -ge $WarningThreshold) { return "WARNING" }
+    return "SUCCESS"
+}
 
-# -- Procesador --
-$cpu    = Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue | Select-Object -First 1
-$cpuUso = if ($cpu) { $cpu.LoadPercentage } else { 0 }
+<#
+.SYNOPSIS
+    Ejecuta una consulta CIM protegida, registrando el error si falla.
+.DESCRIPTION
+    Envuelve Get-CimInstance con try/catch, evitando repetir el mismo
+    bloque para cada clase WMI/CIM consultada en el modulo. Si falla,
+    registra el error como TOOLKIT (falla del script, no del equipo).
+.PARAMETER ClassName
+    Nombre de la clase CIM a consultar (ej: "Win32_OperatingSystem").
+.PARAMETER FriendlyName
+    Nombre descriptivo usado en los mensajes de log/error.
+.OUTPUTS
+    Resultado de Get-CimInstance, o $null si la consulta fallo.
+.EXAMPLE
+    $os = Invoke-CimQuerySafe -ClassName "Win32_OperatingSystem" -FriendlyName "Sistema Operativo"
+#>
+function Invoke-CimQuerySafe {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ClassName,
 
-# -- RAM --
-$modulosRAM   = Get-CimInstance Win32_PhysicalMemory -ErrorAction SilentlyContinue
-$ramFisicaMB  = if ($modulosRAM) {
-    [math]::Round(($modulosRAM | Measure-Object -Property Capacity -Sum).Sum / 1MB)
-} else { 0 }
-$ramSistMB    = if ($os) { [math]::Round($os.TotalVisibleMemorySize / 1KB) } else { 0 }
-$ramLibreMB   = if ($os) { [math]::Round($os.FreePhysicalMemory     / 1KB) } else { 0 }
-$ramUsadaMB   = $ramSistMB - $ramLibreMB
-$ramReservMB  = $ramFisicaMB - $ramSistMB
-$ramPct       = if ($ramSistMB -gt 0) { [math]::Round(($ramUsadaMB / $ramSistMB) * 100) } else { 0 }
-$ramFisicaGB  = [math]::Round($ramFisicaMB / 1024, 1)
-$ramSistGB    = [math]::Round($ramSistMB   / 1024, 1)
-$ramUsadaGB   = [math]::Round($ramUsadaMB  / 1024, 1)
-$ramLibreGB   = [math]::Round($ramLibreMB  / 1024, 1)
-$ramReservGB  = [math]::Round($ramReservMB / 1024, 1)
+        [Parameter(Mandatory)]
+        [string]$FriendlyName
+    )
 
-# -- GPU --
-$gpu = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | Select-Object -First 1
-$gpuVRAM = if ($gpu -and $gpu.AdapterRAM) {
-    [math]::Round($gpu.AdapterRAM / 1GB, 1)
-} else { "N/A" }
+    try {
+        return Get-CimInstance -ClassName $ClassName -ErrorAction Stop
+    } catch {
+        Write-Log "No se pudo obtener $FriendlyName : $($_.Exception.Message)" -Level ERROR -LogFile $LogFile
+        Add-ReportError -Report $script:report -Message "Fallo al obtener $FriendlyName : $($_.Exception.Message)" -Severity ERROR -Source TOOLKIT
+        return $null
+    }
+}
 
-# -- Bateria --
-$bateria = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue | Select-Object -First 1
-$hayBateria = $null -ne $bateria
+<#
+.SYNOPSIS
+    Obtiene el UBR (Update Build Revision) del registro de Windows.
+.OUTPUTS
+    [string] Numero de UBR, o "N/A" si no se pudo leer.
+#>
+function Get-UBR {
+    try {
+        return (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -Name UBR -ErrorAction Stop).UBR
+    } catch {
+        Write-Log "No se pudo leer el UBR: $($_.Exception.Message)" -Level WARNING -LogFile $LogFile
+        Add-ReportError -Report $script:report -Message "Fallo al leer UBR: $($_.Exception.Message)" -Severity WARNING -Source TOOLKIT
+        return "N/A"
+    }
+}
 
-# -- Discos fisicos --
-$discosFisicos = Get-PhysicalDisk -ErrorAction SilentlyContinue | Sort-Object DeviceId
+<#
+.SYNOPSIS
+    Obtiene particiones logicas agrupadas por disco fisico via CIM.
+.OUTPUTS
+    Array de PSCustomObject con DiscoId, Unidad, TotalGB y LibreGB.
+#>
+function Get-Particiones {
+    try {
+        $particiones = Get-CimInstance Win32_DiskPartition -ErrorAction Stop
+        $resultados  = @()
 
-# -- Particiones --
-$particiones = Get-WmiObject Win32_DiskPartition -ErrorAction SilentlyContinue |
-        ForEach-Object {
-            $part    = $_
-            $logicos = Get-WmiObject -Query `
-            "ASSOCIATORS OF {Win32_DiskPartition.DeviceID='$($part.DeviceID)'} WHERE AssocClass=Win32_LogicalDiskToPartition" `
-            -ErrorAction SilentlyContinue
+        foreach ($part in $particiones) {
+            $logicos = Get-CimInstance -Query `
+                "ASSOCIATORS OF {Win32_DiskPartition.DeviceID='$($part.DeviceID)'} WHERE AssocClass=Win32_LogicalDiskToPartition" `
+                -ErrorAction SilentlyContinue
+
             foreach ($l in $logicos) {
-                [PSCustomObject]@{
+                $resultados += [PSCustomObject]@{
                     DiscoId = $part.DiskIndex
                     Unidad  = $l.DeviceID.TrimEnd(':')
                     TotalGB = [math]::Round($l.Size      / 1GB, 1)
@@ -114,280 +161,421 @@ $particiones = Get-WmiObject Win32_DiskPartition -ErrorAction SilentlyContinue |
                 }
             }
         }
+        return $resultados
+    } catch {
+        Write-Log "No se pudieron obtener las particiones: $($_.Exception.Message)" -Level ERROR -LogFile $LogFile
+        Add-ReportError -Report $script:report -Message "Fallo al obtener particiones: $($_.Exception.Message)" -Severity ERROR -Source TOOLKIT
+        return @()
+    }
+}
 
-# -- Red --
-$adaptadorRed = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1
-$ipLocal      = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-        Where-Object { $_.IPAddress -notmatch '^127\.' } | Select-Object -First 1)
-$macAddress   = if ($adaptadorRed) { $adaptadorRed.MacAddress } else { "N/A" }
+#endregion
 
-# -- Servicios criticos --
-$serviciosCriticos = @("WinDefend", "MpsSvc", "wuauserv")
-$estadosServicios  = foreach ($svc in $serviciosCriticos) {
-    $s = Get-Service -Name $svc -ErrorAction SilentlyContinue
-    [PSCustomObject]@{
-        Nombre  = $svc
-        Display = switch ($svc) {
+try{
+    #region RECOLECCION DE DATOS
+
+    Write-Log "Relevando informacion del sistema..." -LogFile $LogFile
+    Write-Log "Esto puede tardar unos segundos." -Level WARNING -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    # -- Sistema Operativo --
+    $os   = Invoke-CimQuerySafe -ClassName "Win32_OperatingSystem" -FriendlyName "Sistema Operativo"
+    $cs   = Invoke-CimQuerySafe -ClassName "Win32_ComputerSystem"  -FriendlyName "Equipo"
+    $mb   = Invoke-CimQuerySafe -ClassName "Win32_BaseBoard"       -FriendlyName "Placa Madre"
+    $bios = Invoke-CimQuerySafe -ClassName "Win32_BIOS"            -FriendlyName "BIOS"
+    $ubr  = Get-UBR
+
+    # -- Uptime --
+    $uptime    = if ($os) { (Get-Date) - $os.LastBootUpTime } else { $null }
+    $uptimeStr = if ($uptime) {
+        "{0}d {1}h {2}m" -f [math]::Floor($uptime.TotalDays), $uptime.Hours, $uptime.Minutes
+    } else { "N/A" }
+
+    # -- Procesador --
+    $cpu    = Invoke-CimQuerySafe -ClassName "Win32_Processor" -FriendlyName "Procesador" | Select-Object -First 1
+    $cpuUso = if ($cpu) { $cpu.LoadPercentage } else { 0 }
+    $nivelCPU = Get-UsageLevel -Value $cpuUso -WarningThreshold 70 -ErrorThreshold 90
+    if ($nivelCPU -ne "SUCCESS") {
+        Add-ReportError -Report $script:report -Message "CPU con $cpuUso% de uso" -Severity $nivelCPU -Source SYSTEM
+    }
+
+    # -- RAM --
+    $modulosRAM   = @(Invoke-CimQuerySafe -ClassName "Win32_PhysicalMemory" -FriendlyName "Modulos de RAM")
+    $ramFisicaMB  = if (@($modulosRAM).Count -gt 0) {
+        [math]::Round(($modulosRAM | Measure-Object -Property Capacity -Sum).Sum / 1MB)
+    } else { 0 }
+    $ramSistMB    = if ($os) { [math]::Round($os.TotalVisibleMemorySize / 1KB) } else { 0 }
+    $ramLibreMB   = if ($os) { [math]::Round($os.FreePhysicalMemory     / 1KB) } else { 0 }
+    $ramUsadaMB   = $ramSistMB - $ramLibreMB
+    $ramReservMB  = $ramFisicaMB - $ramSistMB
+    $ramPct       = if ($ramSistMB -gt 0) { [math]::Round(($ramUsadaMB / $ramSistMB) * 100) } else { 0 }
+    $ramFisicaGB  = [math]::Round($ramFisicaMB / 1024, 1)
+    $ramSistGB    = [math]::Round($ramSistMB   / 1024, 1)
+    $ramUsadaGB   = [math]::Round($ramUsadaMB  / 1024, 1)
+    $ramLibreGB   = [math]::Round($ramLibreMB  / 1024, 1)
+    $ramReservGB  = [math]::Round($ramReservMB / 1024, 1)
+    $nivelRAM = Get-UsageLevel -Value $ramPct -WarningThreshold 75 -ErrorThreshold 90
+    if ($nivelRAM -ne "SUCCESS") {
+        Add-ReportError -Report $script:report -Message "RAM con $ramPct% de uso" -Severity $nivelRAM -Source SYSTEM
+    }
+
+    # -- GPU --
+    $gpu = Invoke-CimQuerySafe -ClassName "Win32_VideoController" -FriendlyName "Placa de Video" | Select-Object -First 1
+    $gpuVRAM = if ($gpu -and $gpu.AdapterRAM) {
+        [math]::Round($gpu.AdapterRAM / 1GB, 1)
+    } else { "N/A" }
+
+    # -- Bateria --
+    $bateria    = Invoke-CimQuerySafe -ClassName "Win32_Battery" -FriendlyName "Bateria" | Select-Object -First 1
+    $hayBateria = $null -ne $bateria
+    $estadoBat  = $null
+    $nivelBat   = $null
+
+    if ($hayBateria) {
+        $estadoBat = switch ($bateria.BatteryStatus) {
+            1 { "Descargando" }
+            2 { "Conectada a corriente" }
+            3 { "Cargando completamente" }
+            4 { "Baja" }
+            5 { "Critica" }
+            6 { "Cargando" }
+            7 { "Cargando y alta" }
+            8 { "Cargando y baja" }
+            9 { "Cargando y critica" }
+            default { "Desconocido" }
+        }
+        $nivelBat = Get-UsageLevel -Value (100 - $bateria.EstimatedChargeRemaining) -WarningThreshold 60 -ErrorThreshold 80
+    }
+
+    # -- Discos fisicos --
+    $discosFisicos = @()
+    try {
+        $discosFisicos = @(Get-PhysicalDisk -ErrorAction Stop | Sort-Object DeviceId)
+    } catch {
+        Write-Log "No se pudieron obtener los discos fisicos: $($_.Exception.Message)" -Level ERROR -LogFile $LogFile
+        Add-ReportError -Report $script:report -Message "Fallo al obtener discos fisicos: $($_.Exception.Message)" -Severity ERROR -Source TOOLKIT
+    }
+
+    # -- Particiones --
+    $particiones = @(Get-Particiones)
+
+    # -- Red --
+    $adaptadorRed = $null
+    $ipLocal      = $null
+    try {
+        $adaptadorRed = Get-NetAdapter -ErrorAction Stop | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1
+        $ipLocal      = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
+                Where-Object { $_.IPAddress -notmatch '^127\.' } | Select-Object -First 1
+    } catch {
+        Write-Log "No se pudo obtener informacion de red: $($_.Exception.Message)" -Level ERROR -LogFile $LogFile
+        Add-ReportError -Report $script:report -Message "Fallo al obtener informacion de red: $($_.Exception.Message)" -Severity ERROR -Source TOOLKIT
+    }
+    $macAddress = if ($adaptadorRed) { $adaptadorRed.MacAddress } else { "N/A" }
+
+    if (-not $adaptadorRed) {
+        Add-ReportError -Report $script:report -Message "Sin adaptador de red activo" -Severity WARNING -Source SYSTEM
+    }
+
+    # -- Servicios criticos --
+    $serviciosCriticos = @("WinDefend", "MpsSvc", "wuauserv")
+    $estadosServicios  = foreach ($svc in $serviciosCriticos) {
+        $s = Get-Service -Name $svc -ErrorAction SilentlyContinue
+        $nombreDisplay = switch ($svc) {
             "WinDefend" { "Win Defender" }
             "MpsSvc"    { "Win Firewall" }
             "wuauserv"  { "Win Update"   }
         }
-        Estado  = if ($s) { $s.Status.ToString() } else { "No encontrado" }
+        $estadoTexto = if ($s) { $s.Status.ToString() } else { "No encontrado" }
+
+        if ($estadoTexto -ne "Running") {
+            Add-ReportError -Report $script:report -Message "$nombreDisplay no esta en ejecucion ($estadoTexto)" -Severity WARNING -Source SYSTEM
+        }
+
+        [PSCustomObject]@{
+            Nombre  = $svc
+            Display = $nombreDisplay
+            Estado  = $estadoTexto
+        }
     }
-}
 
-#endregion
+    #endregion
 
-#region PRESENTACION
+    #region PRESENTACION
 
-Write-Section "INFORMACION DEL SISTEMA" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-
-# -- Sistema Operativo --
-Write-Section "SISTEMA OPERATIVO" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "Nombre       : $($os.Caption)"                                    -LogFile $LogFile
-Write-Log "Version      : $($os.Version).$ubr"                               -LogFile $LogFile
-Write-Log "Arquitectura : $($os.OSArchitecture)"                             -LogFile $LogFile
-Write-Log "Ultimo inicio: $($os.LastBootUpTime.ToString('dd/MM/yyyy HH:mm'))" -LogFile $LogFile
-Write-Log "Uptime       : $uptimeStr"                                         -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-
-# -- Equipo --
-Write-Section "EQUIPO" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "Nombre       : $($cs.Name)"         -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-
-# -- Placa Madre --
-Write-Section "PLACA MADRE" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "Modelo       : $($mb.Product)" -LogFile $LogFile
-Write-Log "Fabricante   : $($mb.Manufacturer)" -LogFile $LogFile
-Write-Log "Version      : $($mb.Version)"        -LogFile $LogFile
-Write-Log "Serial       : $($mb.SerialNumber)"        -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-
-# -- BIOS --
-Write-Section "BIOS" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "Version      : $($bios.SMBIOSBIOSVersion)" -LogFile $LogFile
-Write-Log "Fabricante   : $($bios.Manufacturer)" -LogFile $LogFile
-if ($bios.ReleaseDate) {
-    try {
-        $fechaBios = [datetime]$bios.ReleaseDate
-        Write-Log "Fecha        : $($fechaBios.ToString('dd/MM/yyyy'))" -LogFile $LogFile
-    }
-    catch {
-        Write-Log "Fecha        : $($bios.ReleaseDate)" -LogFile $LogFile
-    }
-}
-Write-Blank -LogFile $LogFile
-
-# -- Procesador --
-Write-Section "PROCESADOR" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "CPU          : $($cpu.Name)"                      -LogFile $LogFile
-Write-Log "Nucleos      : $($cpu.NumberOfCores)"             -LogFile $LogFile
-Write-Log "Hilos        : $($cpu.NumberOfLogicalProcessors)" -LogFile $LogFile
-Write-Log "Velocidad    : $($cpu.MaxClockSpeed) MHz"         -LogFile $LogFile
-
-$nivelCPU = if ($cpuUso -ge 90) { "ERROR" } elseif ($cpuUso -ge 70) { "WARNING" } else { "SUCCESS" }
-Write-Log "Uso actual   : $cpuUso%" -Level $nivelCPU -LogFile $LogFile
-
-Write-Blank -LogFile $LogFile
-
-# -- RAM --
-Write-Section "MEMORIA RAM" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "Fisica real  : $ramFisicaGB GB  ($ramFisicaMB MB)" -LogFile $LogFile
-
-if ($ramReservMB -gt 0) {
-    Write-Log "Reservada HW : $ramReservGB GB  ($ramReservMB MB)  (GPU integrada u otro hardware)" -Level WARNING -LogFile $LogFile
-}
-
-Write-Log "Total SO     : $ramSistGB GB  ($ramSistMB MB)"   -LogFile $LogFile
-
-$nivelRAM = if ($ramPct -ge 90) { "ERROR" } elseif ($ramPct -ge 75) { "WARNING" } else { "SUCCESS" }
-Write-Log "En uso       : $ramUsadaGB GB  ($ramPct%)" -Level $nivelRAM -LogFile $LogFile
-Write-Log "Libre        : $ramLibreGB GB"             -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-
-if ($modulosRAM) {
-    Write-Log "Modulos instalados:" -LogFile $LogFile
-    foreach ($modulo in $modulosRAM) {
-        $gb       = [math]::Round($modulo.Capacity / 1GB, 1)
-        $modelo   = if ($modulo.PartNumber.Trim()) { $modulo.PartNumber.Trim() } else { "Modelo N/A" }
-        $fab      = if ($modulo.Manufacturer.Trim()) { $modulo.Manufacturer.Trim() } else { "Fab N/A" }
-        $linea    = "  Slot {0,-6} {1,4} GB  {2}  {3}  {4} MHz" -f `
-                    $modulo.DeviceLocator, $gb, $modelo, $fab, $modulo.Speed
-        Write-Log $linea -LogFile $LogFile
-    }
-}
-Write-Blank -LogFile $LogFile
-
-# -- GPU --
-Write-Section "PLACA DE VIDEO" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "GPU          : $($gpu.Name)"                         -LogFile $LogFile
-Write-Log "VRAM         : $gpuVRAM GB"                          -LogFile $LogFile
-Write-Log "Resolucion   : $($gpu.CurrentHorizontalResolution) x $($gpu.CurrentVerticalResolution)" -LogFile $LogFile
-Write-Log "Driver       : $($gpu.DriverVersion)"                -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-
-# -- Bateria (solo si existe) --
-if ($hayBateria) {
-    Write-Section "BATERIA" -LogFile $LogFile
+    Write-Section "INFORMACION DEL SISTEMA" -LogFile $LogFile
     Write-Blank -LogFile $LogFile
 
-    $estadoBat = switch ($bateria.BatteryStatus) {
-        1 { "Descargando" }
-        2 { "Conectada a corriente" }
-        3 { "Cargando completamente" }
-        4 { "Baja" }
-        5 { "Critica" }
-        6 { "Cargando" }
-        7 { "Cargando y alta" }
-        8 { "Cargando y baja" }
-        9 { "Cargando y critica" }
-        default { "Desconocido" }
-    }
-
-    $nivelBat = if ($bateria.EstimatedChargeRemaining -le 20) { "ERROR" } `
-                elseif ($bateria.EstimatedChargeRemaining -le 40) { "WARNING" } `
-                else { "SUCCESS" }
-
-    Write-Log "Estado       : $estadoBat"                                      -LogFile $LogFile
-    Write-Log "Carga        : $($bateria.EstimatedChargeRemaining)%" -Level $nivelBat -LogFile $LogFile
-    Write-Log "Tiempo rest. : $($bateria.EstimatedRunTime) min"                -LogFile $LogFile
+    # -- Sistema Operativo --
+    Write-Section "SISTEMA OPERATIVO" -LogFile $LogFile
     Write-Blank -LogFile $LogFile
-}
-
-# -- Discos fisicos --
-Write-Section "DISCOS FISICOS" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-
-foreach ($disco in $discosFisicos) {
-    $estadoMap = @{ "Healthy" = "OK"; "Warning" = "Alerta"; "Unhealthy" = "Malo - Reemplazar" }
-    $estadoStr = if ($estadoMap[$disco.HealthStatus]) { $estadoMap[$disco.HealthStatus] } else { $disco.HealthStatus }
-    $nivelDisco = switch ($disco.HealthStatus) {
-        "Healthy"   { "SUCCESS" }
-        "Warning"   { "WARNING" }
-        "Unhealthy" { "ERROR"   }
-        default     { "INFO"    }
-    }
-    $capacidadGB = [math]::Round($disco.Size / 1GB, 1)
-    Write-Log "Disco $($disco.DeviceId) $($disco.Model)  $capacidadGB GB  $($disco.MediaType)  $($disco.BusType)" -LogFile $LogFile
-    Write-Log "  SMART: $estadoStr" -Level $nivelDisco -LogFile $LogFile
+    Write-Log "Nombre       : $( $os.Caption )"                                    -LogFile $LogFile
+    Write-Log "Version      : $( $os.Version ).$ubr"                               -LogFile $LogFile
+    Write-Log "Arquitectura : $( $os.OSArchitecture )"                             -LogFile $LogFile
+    Write-Log "Ultimo inicio: $($os.LastBootUpTime.ToString('dd/MM/yyyy HH:mm') )" -LogFile $LogFile
+    Write-Log "Uptime       : $uptimeStr"                                          -LogFile $LogFile
     Write-Blank -LogFile $LogFile
-}
 
-# -- Particiones --
-Write-Section "PARTICIONES" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
+    # -- Equipo --
+    Write-Section "EQUIPO" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Write-Log "Nombre       : $( $cs.Name )"  -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
 
-$discoActual = -1
-foreach ($p in $particiones) {
-    if ($p.DiscoId -ne $discoActual) {
-        Write-Log "Disco $($p.DiscoId)" -LogFile $LogFile
-        $discoActual = $p.DiscoId
+    # -- Placa Madre --
+    Write-Section "PLACA MADRE" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Write-Log "Modelo       : $( $mb.Product )" -LogFile $LogFile
+    Write-Log "Fabricante   : $( $mb.Manufacturer )" -LogFile $LogFile
+    Write-Log "Version      : $( $mb.Version )"        -LogFile $LogFile
+    Write-Log "Serial       : $( $mb.SerialNumber )"        -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    # -- BIOS --
+    Write-Section "BIOS" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Write-Log "Version      : $( $bios.SMBIOSBIOSVersion )" -LogFile $LogFile
+    Write-Log "Fabricante   : $( $bios.Manufacturer )" -LogFile $LogFile
+    if ($bios -and $bios.ReleaseDate){
+        Write-Log "Fecha        : $($bios.ReleaseDate.ToString('dd/MM/yyyy'))" -LogFile $LogFile
     }
-    $usadoGB = [math]::Round($p.TotalGB - $p.LibreGB, 1)
-    $pctUso  = if ($p.TotalGB -gt 0) { [math]::Round(($usadoGB / $p.TotalGB) * 100) } else { 0 }
-    $nivel   = if ($pctUso -ge 90) { "ERROR" } elseif ($pctUso -ge 75) { "WARNING" } else { "SUCCESS" }
-    $linea   = "  Unidad {0}   Total: {1,6} GB   Libre: {2,6} GB   Usado: {3}%" -f `
-               $p.Unidad, $p.TotalGB, $p.LibreGB, $pctUso
-    Write-Log $linea -Level $nivel -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    # -- Procesador --
+    Write-Section "PROCESADOR" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Write-Log "CPU          : $( $cpu.Name )"                      -LogFile $LogFile
+    Write-Log "Nucleos      : $( $cpu.NumberOfCores )"             -LogFile $LogFile
+    Write-Log "Hilos        : $( $cpu.NumberOfLogicalProcessors )" -LogFile $LogFile
+    Write-Log "Velocidad    : $( $cpu.MaxClockSpeed ) MHz"         -LogFile $LogFile
+    Write-Log "Uso actual   : $cpuUso%" -Level $nivelCPU           -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    # -- RAM --
+    Write-Section "MEMORIA RAM" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Write-Log "Fisica real  : $ramFisicaGB GB  ($ramFisicaMB MB)" -LogFile $LogFile
+
+    if ($ramReservMB -gt 0) {
+        Write-Log "Reservada HW : $ramReservGB GB  ($ramReservMB MB)  (GPU integrada u otro hardware)" -Level WARNING -LogFile $LogFile
+    }
+    Write-Log "Total SO     : $ramSistGB GB  ($ramSistMB MB)" -LogFile $LogFile
+    Write-Log "En uso       : $ramUsadaGB GB  ($ramPct%)" -Level $nivelRAM -LogFile $LogFile
+    Write-Log "Libre        : $ramLibreGB GB" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    if (@($modulosRAM).Count -gt 0) {
+        Write-Log "Modulos instalados:" -LogFile $LogFile
+        foreach ($modulo in $modulosRAM) {
+            $gb     = [math]::Round($modulo.Capacity / 1GB, 1)
+            $modelo = if ($modulo.PartNumber.Trim())   { $modulo.PartNumber.Trim() }   else { "Modelo N/A" }
+            $fab    = if ($modulo.Manufacturer.Trim()) { $modulo.Manufacturer.Trim() } else { "Fab N/A" }
+            $linea  = "  Slot {0,-6} {1,4} GB  {2}  {3}  {4} MHz" -f `
+                      $modulo.DeviceLocator, $gb, $modelo, $fab, $modulo.Speed
+            Write-Log $linea -LogFile $LogFile
+        }
+    }
+    Write-Blank -LogFile $LogFile
+
+    # -- GPU --
+    Write-Section "PLACA DE VIDEO" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Write-Log "GPU          : $( $gpu.Name )" -LogFile $LogFile
+    Write-Log "VRAM         : $gpuVRAM GB" -LogFile $LogFile
+    Write-Log "Resolucion   : $( $gpu.CurrentHorizontalResolution ) x $( $gpu.CurrentVerticalResolution )" -LogFile $LogFile
+    Write-Log "Driver       : $( $gpu.DriverVersion )" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    # -- Bateria (solo si existe) --
+    if ($hayBateria) {
+        Write-Section "BATERIA" -LogFile $LogFile
+        Write-Blank -LogFile $LogFile
+        Write-Log "Estado       : $estadoBat" -LogFile $LogFile
+        Write-Log "Carga        : $($bateria.EstimatedChargeRemaining)%" -Level $nivelBat -LogFile $LogFile
+        Write-Log "Tiempo rest. : $($bateria.EstimatedRunTime) min" -LogFile $LogFile
+        Write-Blank -LogFile $LogFile
+    }
+
+    # -- Discos fisicos --
+    Write-Section "DISCOS FISICOS" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    $discosResumen = @()
+    foreach ($disco in $discosFisicos) {
+        $estadoMap  = @{ "Healthy" = "OK"; "Warning" = "Alerta"; "Unhealthy" = "Malo - Reemplazar" }
+        $estadoStr  = if ($estadoMap[$disco.HealthStatus]) { $estadoMap[$disco.HealthStatus] } else { $disco.HealthStatus }
+        $nivelDisco = switch ($disco.HealthStatus) {
+            "Healthy"   { "SUCCESS" }
+            "Warning"   { "WARNING" }
+            "Unhealthy" { "ERROR"   }
+            default     { "INFO"    }
+        }
+        $capacidadGB = [math]::Round($disco.Size / 1GB, 1)
+        Write-Log "Disco $($disco.DeviceId) $($disco.Model)  $capacidadGB GB  $($disco.MediaType)  $($disco.BusType)" -LogFile $LogFile
+        Write-Log "  SMART: $estadoStr" -Level $nivelDisco -LogFile $LogFile
+        Write-Blank -LogFile $LogFile
+
+        if ($disco.HealthStatus -ne "Healthy") {
+            Add-ReportError -Report $script:report -Message "Disco $($disco.DeviceId) ($($disco.Model)) con SMART: $estadoStr" -Severity WARNING -Source SYSTEM
+        }
+
+        $discosResumen += [PSCustomObject]@{
+            DeviceId     = $disco.DeviceId
+            Modelo       = $disco.Model
+            CapacidadGB  = $capacidadGB
+            MediaType    = $disco.MediaType
+            BusType      = $disco.BusType
+            SmartEstado  = $estadoStr
+        }
+    }
+
+    # -- Particiones --
+    Write-Section "PARTICIONES" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    $discoActual = -1
+    foreach ($p in $particiones) {
+        if ($p.DiscoId -ne $discoActual) {
+            Write-Log "Disco $($p.DiscoId)" -LogFile $LogFile
+            $discoActual = $p.DiscoId
+        }
+        $usadoGB = [math]::Round($p.TotalGB - $p.LibreGB, 1)
+        $pctUso  = if ($p.TotalGB -gt 0) { [math]::Round(($usadoGB / $p.TotalGB) * 100) } else { 0 }
+        $nivel   = Get-UsageLevel -Value $pctUso -WarningThreshold 75 -ErrorThreshold 90
+        $linea   = "  Unidad {0}   Total: {1,6} GB   Libre: {2,6} GB   Usado: {3}%" -f `
+                   $p.Unidad, $p.TotalGB, $p.LibreGB, $pctUso
+        Write-Log $linea -Level $nivel -LogFile $LogFile
+
+        if ($nivel -ne "SUCCESS") {
+            Add-ReportError -Report $script:report -Message "Unidad $($p.Unidad) con $pctUso% de uso" -Severity WARNING -Source SYSTEM
+        }
+    }
+    Write-Blank -LogFile $LogFile
+
+    # -- Red --
+    Write-Section "RED" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Write-Log "Adaptador    : $( $adaptadorRed.Name )"        -LogFile $LogFile
+    Write-Log "MAC          : $macAddress"                   -LogFile $LogFile
+    Write-Log "IP Local     : $( $ipLocal.IPAddress )"        -LogFile $LogFile
+    Write-Log "Mascara      : /$( $ipLocal.PrefixLength )"    -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    # -- Servicios criticos --
+    Write-Section "SERVICIOS CRITICOS" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    foreach ($svc in $estadosServicios) {
+        $nivel = if ($svc.Estado -eq "Running") { "SUCCESS" } else { "WARNING" }
+        $linea = "{0,-20} : {1}" -f $svc.Display, $svc.Estado
+        Write-Log $linea -Level $nivel -LogFile $LogFile
+    }
+    Write-Blank -LogFile $LogFile
+
+    # -- Usuario actual --
+    Write-Section "USUARIO ACTUAL" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Write-Log "Usuario      : $env:USERNAME"     -LogFile $LogFile
+    Write-Log "Dominio      : $env:USERDOMAIN"   -LogFile $LogFile
+    Write-Log "Perfil       : $env:USERPROFILE"  -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    #endregion
+
+    #region DIAGNOSTICO GENERAL
+
+    Write-Section "DIAGNOSTICO GENERAL" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    $cpuLimpio = $cpu.Name `
+        -replace '\s+with\s+.*graphics.*', '' `
+        -replace '\s+@\s+\d+(\.\d+)?\s*[G|M]Hz', '' `
+        -replace '\([R|TM|r|tm]\)', '' `
+        -replace '\s+', ' '
+    $cpuNombre = if ($cpuLimpio.Length -gt 35) { $cpuLimpio.Substring(0, 35) + "..." } else { $cpuLimpio }
+    Write-Log ("{0,-15}: {1}" -f "CPU", "$cpuNombre - Uso: $cpuUso%") -Level $nivelCPU -LogFile $LogFile
+
+    Write-Log ("{0,-15}: {1}" -f "RAM", "$ramFisicaGB GB fisicos - $ramPct% en uso") -Level $nivelRAM -LogFile $LogFile
+
+    Write-Log ("{0,-15}: {1}" -f "GPU", "$($gpu.Name) - VRAM: $gpuVRAM GB") -LogFile $LogFile
+
+    if ($hayBateria) {
+        Write-Log ("{0,-15}: {1}% - {2}" -f "Bateria", $bateria.EstimatedChargeRemaining, $estadoBat) -Level $nivelBat -LogFile $LogFile
+    } else {
+        Write-Log ("{0,-15}: {1}" -f "Bateria", "No aplica (Desktop)") -LogFile $LogFile
+    }
+
+    foreach ($p in $particiones) {
+        $usadoPct = if ($p.TotalGB -gt 0) { [math]::Round((($p.TotalGB - $p.LibreGB) / $p.TotalGB) * 100) } else { 0 }
+        $nivelP   = Get-UsageLevel -Value $usadoPct -WarningThreshold 75 -ErrorThreshold 90
+        $msgP     = if ($nivelP -eq "ERROR") { "Espacio critico" } elseif ($nivelP -eq "WARNING") { "Considerar limpieza" } else { "OK" }
+        Write-Log ("{0,-15}: {1}% usado - {2}" -f "Disco $($p.Unidad)", $usadoPct, $msgP) -Level $nivelP -LogFile $LogFile
+    }
+
+    foreach ($svc in $estadosServicios) {
+        $nivelSvc = if ($svc.Estado -eq "Running") { "SUCCESS" } else { "WARNING" }
+        Write-Log ("{0,-15}: {1}" -f $svc.Display, $svc.Estado) -Level $nivelSvc -LogFile $LogFile
+    }
+
+    Write-Blank -LogFile $LogFile
+
+    #endregion
+
+    #region REPORTE
+
+    $script:report.data = @{
+        sistemaOperativo = @{
+            nombre       = $os.Caption
+            version      = "$($os.Version).$ubr"
+            arquitectura = $os.OSArchitecture
+            uptime       = $uptimeStr
+        }
+        equipo = @{
+            nombre     = $cs.Name
+            placaMadre = "$($mb.Manufacturer) $($mb.Product)"
+            biosVersion = $bios.SMBIOSBIOSVersion
+        }
+        procesador = @{
+            nombre     = $cpu.Name
+            nucleos    = $cpu.NumberOfCores
+            hilos      = $cpu.NumberOfLogicalProcessors
+            usoPct     = $cpuUso
+        }
+        ram = @{
+            fisicaGB = $ramFisicaGB
+            usadaGB  = $ramUsadaGB
+            libreGB  = $ramLibreGB
+            usoPct   = $ramPct
+        }
+        gpu = @{
+            nombre = $gpu.Name
+            vramGB = $gpuVRAM
+        }
+        bateria = if ($hayBateria) {
+            @{ cargaPct = $bateria.EstimatedChargeRemaining; estado = $estadoBat }
+        } else { $null }
+        discosFisicos = $discosResumen
+        particiones   = $particiones
+        red = @{
+            adaptador = if ($adaptadorRed) { $adaptadorRed.Name } else { $null }
+            mac       = $macAddress
+            ip        = if ($ipLocal) { $ipLocal.IPAddress } else { $null }
+        }
+        serviciosCriticos = $estadosServicios
+    }
+
+    $status = if (@($script:report.errors | Where-Object { $_.severity -eq "ERROR" }).Count -gt 0) { "ERROR" } else { "OK" }
+    $script:report = Complete-ModuleReport -Report $script:report -Status $status
+
+    #endregion
+
+}catch {
+    Write-Log "Error fatal en el modulo: $($_.Exception.Message)" -Level ERROR -LogFile $LogFile
+    Add-ReportError -Report $script:report -Message $_.Exception.Message -Severity ERROR -Source TOOLKIT
+    $script:report = Complete-ModuleReport -Report $script:report -Status "ERROR"
+}finally{
+    Save-ModuleReport -Report $script:report -ReportFile $reportFile
 }
-Write-Blank -LogFile $LogFile
 
-# -- Red --
-Write-Section "RED" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "Adaptador    : $($adaptadorRed.Name)"        -LogFile $LogFile
-Write-Log "MAC          : $macAddress"                   -LogFile $LogFile
-Write-Log "IP Local     : $($ipLocal.IPAddress)"        -LogFile $LogFile
-Write-Log "Mascara      : /$($ipLocal.PrefixLength)"    -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-
-# -- Servicios criticos --
-Write-Section "SERVICIOS CRITICOS" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-
-foreach ($svc in $estadosServicios) {
-    $nivel  = if ($svc.Estado -eq "Running") { "SUCCESS" } else { "WARNING" }
-    $linea  = "{0,-20} : {1}" -f $svc.Display, $svc.Estado
-    Write-Log $linea -Level $nivel -LogFile $LogFile
-}
-Write-Blank -LogFile $LogFile
-
-# -- Usuario actual --
-Write-Section "USUARIO ACTUAL" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "Usuario      : $env:USERNAME"     -LogFile $LogFile
-Write-Log "Dominio      : $env:USERDOMAIN"   -LogFile $LogFile
-Write-Log "Perfil       : $env:USERPROFILE"  -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-
-#endregion
-
-#region DIAGNOSTICO GENERAL
-
-Write-Section "DIAGNOSTICO GENERAL" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-
-# CPU
-$nivelCPUDiag = if ($cpuUso -ge 90) { "ERROR" } elseif ($cpuUso -ge 70) { "WARNING" } else { "SUCCESS" }
-$cpuLimpio = $cpu.Name `
-    -replace '\s+with\s+.*graphics.*', '' `
-    -replace '\s+@\s+\d+(\.\d+)?\s*[G|M]Hz', '' `
-    -replace '\([R|TM|r|tm]\)', '' `
-    -replace '\s+', ' '
-$cpuNombre = if ($cpuLimpio.Length -gt 35) { $cpuLimpio.Substring(0, 35) + "..." } else { $cpuLimpio }
-$lineaCPU     = "{0,-15}: {1}" -f "CPU", "$cpuNombre - Uso: $cpuUso%"
-Write-Log $lineaCPU -Level $nivelCPUDiag -LogFile $LogFile
-
-# RAM
-$nivelRAMDiag = if ($ramPct -ge 90) { "ERROR" } elseif ($ramPct -ge 75) { "WARNING" } else { "SUCCESS" }
-$lineaRam = "{0,-15}: {1}" -f "RAM", "$ramFisicaGB GB fisicos - $ramPct% en uso"
-Write-Log $lineaRam -Level $nivelRAMDiag -LogFile $LogFile
-
-# GPU
-$lineaGPU = "{0,-15}: {1}" -f "GPU", "$($gpu.Name) - VRAM: $gpuVRAM GB"
-Write-Log $lineaGPU -LogFile $LogFile
-
-# Bateria
-if ($hayBateria) {
-    $nivelBatDiag = if ($bateria.EstimatedChargeRemaining -le 20) { "ERROR" } `
-                    elseif ($bateria.EstimatedChargeRemaining -le 40) { "WARNING" } `
-                    else { "SUCCESS" }
-    $lineaBat = "{0,-15}: {1}% - {2}" -f "Bateria", $bateria.EstimatedChargeRemaining, $estadoBat
-    Write-Log $lineaBat -Level $nivelBatDiag -LogFile $LogFile
-} else {
-    $lineaBat = "{0,-15}: {1}" -f "Bateria", "No aplica (Desktop)"
-    Write-Log $lineaBat -LogFile $LogFile
-}
-
-# Particiones
-foreach ($p in $particiones) {
-    $usadoPct = if ($p.TotalGB -gt 0) { [math]::Round((($p.TotalGB - $p.LibreGB) / $p.TotalGB) * 100) } else { 0 }
-    $nivelP   = if ($usadoPct -ge 90) { "ERROR" } elseif ($usadoPct -ge 75) { "WARNING" } else { "SUCCESS" }
-    $msgP     = if ($usadoPct -ge 90) { "Espacio critico" } elseif ($usadoPct -ge 75) { "Considerar limpieza" } else { "OK" }
-    $lineaPart = "{0,-15}: {1}% usado - {2}" -f "Disco $($p.Unidad)", $usadoPct, $msgP
-    Write-Log $lineaPart -Level $nivelP -LogFile $LogFile
-}
-
-# Servicios criticos
-foreach ($svc in $estadosServicios) {
-    $nivelSvcDiag = if ($svc.Estado -eq "Running") { "SUCCESS" } else { "WARNING" }
-    Write-Log ("{0,-15}: {1}" -f $svc.Display, $svc.Estado) -Level $nivelSvcDiag -LogFile $LogFile
-}
-
-Write-Blank -LogFile $LogFile
-
-#endregion
-
-#region RESUMEN
+#region SALIDA
 
 Write-Section -LogFile $LogFile
 Write-Log "Log guardado en: $LogFile" -LogFile $LogFile
