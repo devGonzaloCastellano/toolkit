@@ -6,7 +6,7 @@
     agrupando instancias multiples del mismo proceso. Abrevia rutas largas
     para mejorar la legibilidad. Incluye resumen de uso de CPU y RAM.
 .NOTES
-    Version : 2.1.0
+    Version : 3.0.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -22,6 +22,7 @@ param(
 #region IMPORTS
 
 . "$PSScriptRoot\..\lib\Utils.ps1"
+. "$PSScriptRoot\..\lib\Reporting.ps1"
 
 #endregion
 
@@ -37,6 +38,12 @@ if (-not $NoElevation) {
 
 $envInfo = Initialize-Environment -LogDir $LogDir -ModuleName "procesos"
 $LogFile = $envInfo.LogFile
+
+Set-CurrentExecution -ModuleName "procesos" -TxtPath $LogFile
+
+$reportsDir = Join-Path (Split-Path $LogDir -Parent) "reports"
+$reportFile = Get-ReportFileName -ReportsDir $reportsDir -ModuleName "procesos"
+$script:report = New-ModuleReport -ModuleName "procesos"
 
 #endregion
 
@@ -88,42 +95,9 @@ $ProcesosMalware = @(
     "meterpreter", "msf", "payload"
 )
 
-# Alias para abreviar rutas largas en el display
-$AliasRutas = [ordered]@{
-    "$env:SystemRoot\System32"          = "[System32]"
-    "$env:SystemRoot\SysWOW64"          = "[SysWOW64]"
-    "$env:SystemRoot"                   = "[Windows]"
-    "$env:ProgramFiles"                 = "[PF]"
-    "${env:ProgramFiles(x86)}"          = "[PF86]"
-    "$env:USERPROFILE\AppData\Local"    = "[AppLocal]"
-    "$env:USERPROFILE\AppData\Roaming"  = "[AppRoaming]"
-    "$env:USERPROFILE"                  = "[User]"
-}
-
 #endregion
 
 #region FUNCIONES INTERNAS
-
-<#
-.SYNOPSIS
-    Abrevia una ruta larga usando los alias definidos.
-.PARAMETER Ruta
-    Ruta completa a abreviar.
-.OUTPUTS
-    String con la ruta abreviada.
-#>
-function Format-Ruta {
-    param([string]$Ruta)
-
-    if (-not $Ruta) { return "N/A" }
-
-    foreach ($alias in $AliasRutas.GetEnumerator()) {
-        if ($Ruta.StartsWith($alias.Key, [System.StringComparison]::OrdinalIgnoreCase)) {
-            return $alias.Value + $Ruta.Substring($alias.Key.Length)
-        }
-    }
-    return $Ruta
-}
 
 <#
 .SYNOPSIS
@@ -143,26 +117,17 @@ function Get-ClasificacionProceso {
 
     # Prioridad 1: nombre coincide con malware conocido
     if ($ProcesosMalware -contains $Nombre.ToLower()) {
-        return [PSCustomObject]@{
-            Nivel     = "ERROR"
-            Categoria = "MAL"
-        }
+        return [PSCustomObject]@{Nivel = "ERROR"; Categoria = "MAL" }
     }
 
     # Prioridad 2: proceso del sistema operativo
-    if ($Procesossistema -contains $Nombre) {
-        return [PSCustomObject]@{
-            Nivel     = "SUCCESS"
-            Categoria = "S.O"
-        }
+    if ($ProcesosSistema -contains $Nombre) {
+        return [PSCustomObject]@{ Nivel = "SUCCESS"; Categoria = "S.O" }
     }
 
     # Prioridad 3: aplicacion conocida y legitima
     if ($ProcesosAplicaciones -contains $Nombre) {
-        return [PSCustomObject]@{
-            Nivel     = "INFO"
-            Categoria = "APP"
-        }
+        return [PSCustomObject]@{ Nivel = "INFO"; Categoria = "APP" }
     }
 
     # Prioridad 4: proceso con ruta inusual (fuera de dirs estandar)
@@ -170,142 +135,189 @@ function Get-ClasificacionProceso {
         $rutaEstandar = $Ruta -match `
             '(\\Windows\\|\\Program Files|\\AppData\\|\\Microsoft\\)'
         if (-not $rutaEstandar) {
-            return [PSCustomObject]@{
-                Nivel     = "WARNING"
-                Categoria = "EXT"
-            }
+            return [PSCustomObject]@{ Nivel = "WARNING"; Categoria = "EXT" }
         }
     }
 
     # Prioridad 5: sin ruta detectable (proceso protegido o del kernel)
     if (-not $Ruta -or $Ruta -eq "N/A") {
-        return [PSCustomObject]@{
-            Nivel     = "INFO"
-            Categoria = "SYS"
-        }
+        return [PSCustomObject]@{ Nivel = "INFO"; Categoria = "SYS" }
     }
 
     # Default: proceso desconocido pero con ruta estandar
-    return [PSCustomObject]@{
-        Nivel     = "WARNING"
-        Categoria = "DES"
-    }
+    return [PSCustomObject]@{ Nivel = "WARNING"; Categoria = "DES" }
 }
 
 #endregion
 
-#region RECOLECCION DE DATOS
+try{
 
-# Recursos globales del sistema
-$os  = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
-$cpu = Get-CimInstance Win32_Processor       -ErrorAction SilentlyContinue
+    #region RECOLECCION DE DATOS
 
-$ramTotalMB = [math]::Round($os.TotalVisibleMemorySize / 1KB)
-$ramLibreMB = [math]::Round($os.FreePhysicalMemory     / 1KB)
-$ramUsadaMB = $ramTotalMB - $ramLibreMB
-$ramPct     = [math]::Round(($ramUsadaMB / $ramTotalMB) * 100)
-$cpuUso     = $cpu.LoadPercentage
+    # Recursos globales del sistema
+    $os  = $null
+    $cpu = $null
 
-# Recolectar todos los procesos con sus datos
-$todosProcesos = Get-Process -ErrorAction SilentlyContinue | ForEach-Object {
-    $ruta   = try { $_.MainModule.FileName } catch { $null }
-    $clasif = Get-ClasificacionProceso -Nombre $_.Name -Ruta $ruta
-
-    [PSCustomObject]@{
-        Nombre    = $_.Name
-        PID       = $_.Id
-        CPU       = [math]::Round($_.CPU, 1)
-        RAMMB     = [math]::Round($_.WorkingSet / 1MB, 1)
-        Nivel     = $clasif.Nivel
-        Categoria = $clasif.Categoria
+    try {
+        $os  = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+        $cpu = Get-CimInstance Win32_Processor -ErrorAction Stop | Select-Object -First 1
+    } catch {
+        Write-Log "No se pudo obtener informacion de CPU/RAM del sistema: $($_.Exception.Message)" -Level ERROR -LogFile $LogFile
+        Add-ReportError -Report $script:report -Message "Fallo al obtener info de CPU/RAM: $($_.Exception.Message)" -Severity ERROR -Source TOOLKIT
     }
-}
 
-# Top 15 por RAM
-$topRAM = $todosProcesos | Sort-Object RAMMB -Descending | Select-Object -First 15
+    $ramTotalMB = if ($os) { [math]::Round($os.TotalVisibleMemorySize / 1KB) } else { 0 }
+    $ramLibreMB = if ($os) { [math]::Round($os.FreePhysicalMemory     / 1KB) } else { 0 }
+    $ramUsadaMB = $ramTotalMB - $ramLibreMB
+    $ramPct     = if ($ramTotalMB -gt 0) { [math]::Round(($ramUsadaMB / $ramTotalMB) * 100) } else { 0 }
+    $cpuUso     = if ($cpu) { $cpu.LoadPercentage } else { 0 }
 
-# Top 15 por CPU
-$topCPU = $todosProcesos | Sort-Object CPU -Descending | Select-Object -First 15
-
-# Procesos agrupados por nombre con clasificacion
-$procesosAgrupados = $todosProcesos |
-        Group-Object Nombre |
-        ForEach-Object {
-            $grupo     = $_
-            $nivelMax  = ($grupo.Group | Where-Object { $_.Nivel -eq "ERROR" }   | Select-Object -First 1)
-            if (-not $nivelMax) { $nivelMax = $grupo.Group | Where-Object { $_.Nivel -eq "WARNING" } | Select-Object -First 1 }
-            if (-not $nivelMax) { $nivelMax = $grupo.Group[0] }
-
-            $ramTotal  = ($grupo.Group | Measure-Object RAMMB -Sum).Sum
-            $cpuTotal  = ($grupo.Group | Measure-Object CPU  -Sum).Sum
+    # Recolectar todos los procesos con sus datos
+    $todosProcesos = @()
+    try {
+        $todosProcesos = Get-Process -ErrorAction Stop | ForEach-Object {
+            $ruta   = try { $_.MainModule.FileName } catch { $null }
+            $clasif = Get-ClasificacionProceso -Nombre $_.Name -Ruta $ruta
 
             [PSCustomObject]@{
-                Nombre     = $grupo.Name
-                Instancias = $grupo.Count
-                CPU        = [math]::Round($cpuTotal, 1)
-                RAMMB      = [math]::Round($ramTotal, 1)
-                Nivel      = $nivelMax.Nivel
-                Categoria  = $nivelMax.Categoria
+                Nombre    = $_.Name
+                PID       = $_.Id
+                CPU       = [math]::Round($_.CPU, 1)
+                RAMMB     = [math]::Round($_.WorkingSet / 1MB, 1)
+                Nivel     = $clasif.Nivel
+                Categoria = $clasif.Categoria
             }
-        } | Sort-Object @{Expression={ @{ ERROR=0; WARNING=1; INFO=2; SUCCESS=3 }[$_.Nivel] }; Ascending=$true},
-        @{Expression={ $_.RAMMB }; Descending=$true}
+        }
+    } catch {
+        Write-Log "No se pudo obtener la lista de procesos: $($_.Exception.Message)" -Level ERROR -LogFile $LogFile
+        Add-ReportError -Report $script:report -Message "Fallo al obtener procesos: $($_.Exception.Message)" -Severity ERROR -Source TOOLKIT
+    }
 
-#endregion
 
-#region PRESENTACION
+    # Top 15 por RAM
+    $topRAM = @($todosProcesos | Sort-Object RAMMB -Descending | Select-Object -First 15)
+    # Top 15 por CPU
+    $topCPU = @($todosProcesos | Sort-Object CPU -Descending | Select-Object -First 15)
 
-Write-Section "PROCESOS EN EJECUCION" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
+    # Procesos agrupados por nombre con clasificacion
+    $procesosAgrupados = @($todosProcesos |
+            Group-Object Nombre |
+            ForEach-Object {
+                $grupo    = $_
+                $nivelMax = ($grupo.Group | Where-Object { $_.Nivel -eq "ERROR" }   | Select-Object -First 1)
+                if (-not $nivelMax) { $nivelMax = $grupo.Group | Where-Object { $_.Nivel -eq "WARNING" } | Select-Object -First 1 }
+                if (-not $nivelMax) { $nivelMax = $grupo.Group[0] }
 
-# -- Resumen de recursos --
-Write-Section "RESUMEN DE RECURSOS" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "CPU uso global : $cpuUso%"                                         -LogFile $LogFile
-Write-Log "RAM usada      : $ramUsadaMB MB de $ramTotalMB MB ($ramPct%)"      -LogFile $LogFile
-Write-Blank -LogFile $LogFile
+                $ramTotal = ($grupo.Group | Measure-Object RAMMB -Sum).Sum
+                $cpuTotal = ($grupo.Group | Measure-Object CPU  -Sum).Sum
 
-# -- Top 15 por RAM --
-Write-Section "TOP 15 POR RAM" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
+                [PSCustomObject]@{
+                    Nombre     = $grupo.Name
+                    Instancias = $grupo.Count
+                    CPU        = [math]::Round($cpuTotal, 1)
+                    RAMMB      = [math]::Round($ramTotal, 1)
+                    Nivel      = $nivelMax.Nivel
+                    Categoria  = $nivelMax.Categoria
+                }
+            } | Sort-Object @{Expression={ @{ ERROR=0; WARNING=1; INFO=2; SUCCESS=3 }[$_.Nivel] }; Ascending=$true},
+            @{Expression={ $_.RAMMB }; Descending=$true})
 
-foreach ($p in $topRAM) {
-    $linea = "{0,-25} RAM:{1,7} MB  CPU:{2,7}s" -f $p.Nombre, $p.RAMMB, $p.CPU
-    Write-Log $linea -Level $p.Nivel -LogFile $LogFile
+    $procesosMalware      = @($procesosAgrupados | Where-Object { $_.Categoria -eq "MAL" })
+    $procesosDesconocidos = @($procesosAgrupados | Where-Object { $_.Categoria -eq "DES" })
+    $procesosRutaExterna  = @($procesosAgrupados | Where-Object { $_.Categoria -eq "EXT" })
+
+    foreach ($p in $procesosMalware) {
+        Add-ReportError -Report $script:report -Message "Posible malware detectado: $($p.Nombre)" -Severity ERROR -Source SYSTEM
+    }
+    foreach ($p in $procesosDesconocidos) {
+        Add-ReportError -Report $script:report -Message "Proceso no reconocido: $($p.Nombre)" -Severity WARNING -Source SYSTEM
+    }
+    foreach ($p in $procesosRutaExterna) {
+        Add-ReportError -Report $script:report -Message "Proceso con ruta externa: $($p.Nombre)" -Severity WARNING -Source SYSTEM
+    }
+
+    #endregion
+
+    #region PRESENTACION
+
+    Write-Section "PROCESOS EN EJECUCION" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    # -- Resumen de recursos --
+    Write-Section "RESUMEN DE RECURSOS" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Write-Log "CPU uso global : $cpuUso%" -LogFile $LogFile
+    Write-Log "RAM usada      : $ramUsadaMB MB de $ramTotalMB MB ($ramPct%)" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    # -- Top 15 por RAM --
+    Write-Section "TOP 15 POR RAM" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    foreach ($p in $topRAM) {
+        $linea = "{0,-25} RAM:{1,7} MB  CPU:{2,7}s" -f $p.Nombre, $p.RAMMB, $p.CPU
+        Write-Log $linea -Level $p.Nivel -LogFile $LogFile
+    }
+    Write-Blank -LogFile $LogFile
+
+    # -- Top 15 por CPU --
+    Write-Section "TOP 15 POR CPU" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    foreach ($p in $topCPU) {
+        $linea = "{0,-25} CPU:{1,7}s  RAM:{2,7} MB" -f $p.Nombre, $p.CPU, $p.RAMMB
+        Write-Log $linea -Level $p.Nivel -LogFile $LogFile
+    }
+    Write-Blank -LogFile $LogFile
+
+    # -- Todos los procesos agrupados por clasificacion --
+    Write-Section "TODOS LOS PROCESOS" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Write-Log "Agrupados por nombre. ERROR y WARNING aparecen primero." -Level NOTE -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    foreach ($p in $procesosAgrupados) {
+        $instStr    = if ($p.Instancias -gt 1) { " x$($p.Instancias)" } else { "" }
+        $nombreInst = "$($p.Nombre)$instStr"
+        $tag        = Get-CenteredTag -Text $p.Categoria -TotalWidth 5
+        $linea      = "{0,-25} {1}" -f $nombreInst, $tag
+        Write-Log $linea -Level $p.Nivel -LogFile $LogFile
+    }
+
+    Write-Blank -LogFile $LogFile
+    Write-Log "Referencias: S.O = Sistema operativo  APP = Aplicacion conocida  SYS = Sin ruta/kernel" -Level NOTE -LogFile $LogFile
+    Write-Log "             EXT = Ruta externa       DES = Desconocido          MAL = Posible malware" -Level NOTE -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    #endregion
+
+    #region REPORTE
+
+    $script:report.data = @{
+        cpuUsoPct           = $cpuUso
+        ramUsadaMB          = $ramUsadaMB
+        ramTotalMB          = $ramTotalMB
+        ramPct              = $ramPct
+        totalProcesosUnicos = @($procesosAgrupados).Count
+        procesosMalware      = @($procesosMalware      | Select-Object Nombre, Instancias)
+        procesosDesconocidos = @($procesosDesconocidos | Select-Object Nombre, Instancias)
+        procesosRutaExterna  = @($procesosRutaExterna  | Select-Object Nombre, Instancias)
+        topRAM = @($topRAM | Select-Object Nombre, RAMMB, CPU, Categoria)
+        topCPU = @($topCPU | Select-Object Nombre, CPU, RAMMB, Categoria)
+    }
+
+    $status = if (@($script:report.errors | Where-Object { $_.severity -eq "ERROR" }).Count -gt 0) { "ERROR" } else { "OK" }
+    $script:report = Complete-ModuleReport -Report $script:report -Status $status
+
+    #endregion
+
+} catch {
+    Write-Log "Error fatal en el modulo: $($_.Exception.Message)" -Level ERROR -LogFile $LogFile
+    Add-ReportError -Report $script:report -Message $_.Exception.Message -Severity ERROR -Source TOOLKIT
+    $script:report = Complete-ModuleReport -Report $script:report -Status "ERROR"
+} finally {
+    Save-ModuleReport -Report $script:report -ReportFile $reportFile
 }
-Write-Blank -LogFile $LogFile
 
-# -- Top 15 por CPU --
-Write-Section "TOP 15 POR CPU" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-
-foreach ($p in $topCPU) {
-    $linea = "{0,-25} CPU:{1,7}s  RAM:{2,7} MB" -f $p.Nombre, $p.CPU, $p.RAMMB
-    Write-Log $linea -Level $p.Nivel -LogFile $LogFile
-}
-Write-Blank -LogFile $LogFile
-
-# -- Todos los procesos agrupados por clasificacion --
-Write-Section "TODOS LOS PROCESOS" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "Agrupados por nombre. ERROR y WARNING aparecen primero." -Level NOTE -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-
-foreach ($p in $procesosAgrupados) {
-    $instStr   = if ($p.Instancias -gt 1) { " x$($p.Instancias)" } else { "" }
-    $nombreInst = "$($p.Nombre)$instStr"
-    $tag        = Get-CenteredTag -Text $p.Categoria -TotalWidth 5
-    $linea      = "{0,-25} {1}" -f $nombreInst, $tag
-    Write-Log $linea -Level $p.Nivel -LogFile $LogFile
-}
-
-Write-Blank -LogFile $LogFile
-Write-Log "Referencias: S.O = Sistema operativo  APP = Aplicacion conocida  SYS = Sin ruta/kernel" -Level NOTE -LogFile $LogFile
-Write-Log "             EXT = Ruta externa       DES = Desconocido          MAL = Posible malware" -Level NOTE -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-
-#endregion
-
-#region RESUMEN
+#region SALIDA
 
 Write-Section -LogFile $LogFile
 Write-Log "Log guardado en: $LogFile" -LogFile $LogFile
