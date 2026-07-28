@@ -7,7 +7,7 @@
     y limpieza de configuracion de proxy. Muestra diagnostico antes y
     despues de la reparacion para verificar el resultado.
 .NOTES
-    Version : 2.1.0
+    Version : 3.0.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -23,6 +23,7 @@ param(
 #region IMPORTS
 
 . "$PSScriptRoot\..\lib\Utils.ps1"
+. "$PSScriptRoot\..\lib\Reporting.ps1"
 
 #endregion
 
@@ -39,6 +40,13 @@ if (-not $NoElevation) {
 $envInfo = Initialize-Environment -LogDir $LogDir -ModuleName "reparar_red"
 $LogFile = $envInfo.LogFile
 
+Set-CurrentExecution -ModuleName "reparar_red" -TxtPath $LogFile
+
+$reportsDir = Join-Path (Split-Path $LogDir -Parent) "reports"
+$reportFile = Get-ReportFileName -ReportsDir $reportsDir -ModuleName "reparar_red"
+$script:report = New-ModuleReport -ModuleName "reparar_red"
+$script:pasosResultado = @()
+
 #endregion
 
 #region FUNCIONES INTERNAS
@@ -50,20 +58,26 @@ $LogFile = $envInfo.LogFile
     PSCustomObject con IPLocal, Gateway y Conectividad.
 #>
 function Get-EstadoRed {
-    $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-            Where-Object { $_.IPAddress -notmatch '^127\.' } |
-            Select-Object -First 1).IPAddress
+    try {
+        $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
+                Where-Object { $_.IPAddress -notmatch '^127\.' } |
+                Select-Object -First 1).IPAddress
 
-    $gw = (Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
-            Sort-Object RouteMetric |
-            Select-Object -First 1).NextHop
+        $gw = (Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
+                Sort-Object RouteMetric |
+                Select-Object -First 1).NextHop
 
-    $ping = Test-Connection -ComputerName "8.8.8.8" -Count 2 -Quiet -ErrorAction SilentlyContinue
+        $ping = Test-Connection -ComputerName "8.8.8.8" -Count 2 -Quiet -ErrorAction SilentlyContinue
 
-    return [PSCustomObject]@{
-        IPLocal      = if ($ip) { $ip } else { "No detectada" }
-        Gateway      = if ($gw) { $gw } else { "No detectado" }
-        Conectividad = if ($ping) { "OK" } else { "SIN CONECTIVIDAD" }
+        return [PSCustomObject]@{
+            IPLocal      = if ($ip) { $ip } else { "No detectada" }
+            Gateway      = if ($gw) { $gw } else { "No detectado" }
+            Conectividad = if ($ping) { "OK" } else { "SIN CONECTIVIDAD" }
+        }
+    } catch {
+        Write-Log "No se pudo obtener el estado de red: $($_.Exception.Message)" -Level ERROR -LogFile $LogFile
+        Add-ReportError -Report $script:report -Message "Fallo al obtener estado de red: $($_.Exception.Message)" -Severity ERROR -Source TOOLKIT
+        return [PSCustomObject]@{ IPLocal = "No detectada"; Gateway = "No detectado"; Conectividad = "DESCONOCIDA" }
     }
 }
 
@@ -111,91 +125,124 @@ function Invoke-PasoReparacion {
     Write-Log $Descripcion -Level NOTE -LogFile $LogFile
     Write-Blank -LogFile $LogFile
 
+    $exitoso = $true
     try {
         & $Accion
         Write-Log "OK." -Level SUCCESS -LogFile $LogFile
     } catch {
-        Write-Log "Error: $_" -Level ERROR -LogFile $LogFile
+        Write-Log "Error: $($_.Exception.Message)" -Level ERROR -LogFile $LogFile
+        Add-ReportError -Report $script:report -Message "Fallo en paso '$Titulo': $($_.Exception.Message)" -Severity ERROR -Source TOOLKIT
+        $exitoso = $false
+    }
+
+    $script:pasosResultado += [PSCustomObject]@{
+        Numero  = $Numero
+        Titulo  = $Titulo
+        Exitoso = $exitoso
     }
 }
 
 #endregion
 
-#region LOGICA PRINCIPAL
+try{
 
-Write-Section "REPARACION DE RED" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
+    #region LOGICA PRINCIPAL
 
-# -- Diagnostico previo --
-Write-Section "ESTADO PREVIO" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-$estadoPrevio = Get-EstadoRed
-Show-EstadoRed -Estado $estadoPrevio
-Write-Blank -LogFile $LogFile
+    Write-Section "REPARACION DE RED" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
 
-# -- Pasos de reparacion --
-Write-Section "REPARACION" -LogFile $LogFile
+    # -- Diagnostico previo --
+    Write-Section "ESTADO PREVIO" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    $estadoPrevio = Get-EstadoRed
+    Show-EstadoRed -Estado $estadoPrevio
+    Write-Blank -LogFile $LogFile
 
-$totalPasos = 5
+    # -- Pasos de reparacion --
+    Write-Section "REPARACION" -LogFile $LogFile
 
-Invoke-PasoReparacion -Numero 1 -Total $totalPasos `
+    $totalPasos = 5
+
+    Invoke-PasoReparacion -Numero 1 -Total $totalPasos `
     -Titulo "Flush DNS" `
     -Descripcion "Limpia la cache DNS almacenada por Windows." `
     -Accion { Clear-DnsClientCache -ErrorAction Stop }
 
-Invoke-PasoReparacion -Numero 2 -Total $totalPasos `
+    Invoke-PasoReparacion -Numero 2 -Total $totalPasos `
     -Titulo "Liberar y renovar IP" `
     -Descripcion "Solicita una nueva direccion IP al router." `
     -Accion {
-    $adapters = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
-    foreach ($adapter in $adapters) {
-        $null = ipconfig /release $adapter.Name 2>$null
+        $adapters = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }
+        foreach ($adapter in $adapters) {
+            $null = ipconfig /release $adapter.Name 2>$null
+        }
+        $null = ipconfig /renew 2>$null
     }
-    $null = ipconfig /renew 2>$null
-}
 
-Invoke-PasoReparacion -Numero 3 -Total $totalPasos `
+    Invoke-PasoReparacion -Numero 3 -Total $totalPasos `
     -Titulo "Reset Winsock" `
     -Descripcion "Restablece la configuracion Winsock de Windows." `
     -Accion { netsh winsock reset | Out-Null }
 
-Invoke-PasoReparacion -Numero 4 -Total $totalPasos `
+    Invoke-PasoReparacion -Numero 4 -Total $totalPasos `
     -Titulo "Reset TCP/IP" `
     -Descripcion "Restablece la configuracion TCP/IP a valores predeterminados." `
     -Accion { netsh int ip reset | Out-Null }
 
-Invoke-PasoReparacion -Numero 5 -Total $totalPasos `
+    Invoke-PasoReparacion -Numero 5 -Total $totalPasos `
     -Titulo "Limpiar configuracion de proxy" `
     -Descripcion "Elimina configuraciones de proxy almacenadas en Windows." `
     -Accion {
-    netsh winhttp reset proxy | Out-Null
-    Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" `
+        netsh winhttp reset proxy | Out-Null
+        Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" `
             -Name "ProxyEnable" -ErrorAction SilentlyContinue
-    Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" `
+        Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" `
             -Name "ProxyServer" -ErrorAction SilentlyContinue
+    }
+
+    # -- Diagnostico posterior --
+    Write-Blank -LogFile $LogFile
+    Write-Section "ESTADO POST-REPARACION" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    $estadoPost = Get-EstadoRed
+    Show-EstadoRed -Estado $estadoPost
+    Write-Blank -LogFile $LogFile
+
+    # -- Advertencia de reinicio --
+    if ($estadoPost.Conectividad -ne "OK") {
+        Write-Log "Sin conectividad luego del reset." -Level WARNING -LogFile $LogFile
+        Write-Log "Reiniciar el equipo para aplicar los cambios correctamente." -Level WARNING -LogFile $LogFile
+    } else {
+        Write-Log "Reparacion completada con conectividad restaurada." -Level SUCCESS -LogFile $LogFile
+    }
+    Write-Blank -LogFile $LogFile
+    Write-Log "IMPORTANTE: Reiniciar el equipo para aplicar Winsock y TCP/IP correctamente." -Level WARNING -LogFile $LogFile
+
+    #endregion
+
+    #region REPORTE
+
+    $script:report.data = @{
+        estadoPrevio = $estadoPrevio
+        estadoPost   = $estadoPost
+        pasos        = $script:pasosResultado
+    }
+
+    $status = if (@($script:report.errors | Where-Object { $_.severity -eq "ERROR" }).Count -gt 0) { "ERROR" } else { "OK" }
+    $script:report = Complete-ModuleReport -Report $script:report -Status $status
+
+    #endregion
+
+} catch {
+    Write-Log "Error fatal en el modulo: $($_.Exception.Message)" -Level ERROR -LogFile $LogFile
+    Add-ReportError -Report $script:report -Message $_.Exception.Message -Severity ERROR -Source TOOLKIT
+    $script:report = Complete-ModuleReport -Report $script:report -Status "ERROR"
+} finally {
+    Save-ModuleReport -Report $script:report -ReportFile $reportFile
 }
 
-# -- Diagnostico posterior --
-Write-Blank -LogFile $LogFile
-Write-Section "ESTADO POST-REPARACION" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-$estadoPost = Get-EstadoRed
-Show-EstadoRed -Estado $estadoPost
-Write-Blank -LogFile $LogFile
 
-# -- Advertencia de reinicio --
-if ($estadoPost.Conectividad -ne "OK") {
-    Write-Log "Sin conectividad luego del reset." -Level WARNING -LogFile $LogFile
-    Write-Log "Reiniciar el equipo para aplicar los cambios correctamente." -Level WARNING -LogFile $LogFile
-} else {
-    Write-Log "Reparacion completada con conectividad restaurada." -Level SUCCESS -LogFile $LogFile
-}
-Write-Blank -LogFile $LogFile
-Write-Log "IMPORTANTE: Reiniciar el equipo para aplicar Winsock y TCP/IP correctamente." -Level WARNING -LogFile $LogFile
-
-#endregion
-
-#region RESUMEN
+#region SALIDA
 
 Write-Blank -LogFile $LogFile
 Write-Section -LogFile $LogFile
