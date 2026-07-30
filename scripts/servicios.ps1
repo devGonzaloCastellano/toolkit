@@ -6,7 +6,7 @@
     servicios raramente utilizados. No desactiva ni modifica nada,
     solo reporta el estado para que el tecnico tome decisiones informadas.
 .NOTES
-    Version : 2.1.0
+    Version : 3.0.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -22,6 +22,7 @@ param(
 #region IMPORTS
 
 . "$PSScriptRoot\..\lib\Utils.ps1"
+. "$PSScriptRoot\..\lib\Reporting.ps1"
 
 #endregion
 
@@ -37,6 +38,12 @@ if (-not $NoElevation) {
 
 $envInfo = Initialize-Environment -LogDir $LogDir -ModuleName "servicios"
 $LogFile = $envInfo.LogFile
+
+Set-CurrentExecution -ModuleName "servicios" -TxtPath $LogFile
+
+$reportsDir = Join-Path (Split-Path $LogDir -Parent) "reports"
+$reportFile = Get-ReportFileName -ReportsDir $reportsDir -ModuleName "servicios"
+$script:report = New-ModuleReport -ModuleName "servicios"
 
 #endregion
 
@@ -127,66 +134,100 @@ function Get-NivelPorEstado {
 
 #endregion
 
-#region RECOLECCION DE DATOS
+try{
 
-# Consultamos todos los servicios antes de mostrar nada
-# para separar la obtencion de datos de la presentacion
-$Resultados = foreach ($categoria in $Categorias) {
-    $serviciosEvaluados = foreach ($svc in $categoria.Servicios) {
-        $estado = Get-EstadoServicio -Nombre $svc.Nombre
+    #region RECOLECCION DE DATOS
+
+    # Consultamos todos los servicios antes de mostrar nada
+    # para separar la obtencion de datos de la presentacion
+    $Resultados = foreach ($categoria in $Categorias) {
+        $serviciosEvaluados = foreach ($svc in $categoria.Servicios) {
+            $estado = Get-EstadoServicio -Nombre $svc.Nombre
+            [PSCustomObject]@{
+                Nombre      = $svc.Nombre
+                Descripcion = $svc.Descripcion
+                Estado      = $estado
+                Nivel       = Get-NivelPorEstado -Estado $estado
+            }
+        }
         [PSCustomObject]@{
-            Nombre      = $svc.Nombre
-            Descripcion = $svc.Descripcion
-            Estado      = $estado
-            Nivel       = Get-NivelPorEstado -Estado $estado
+            Titulo    = $categoria.Titulo
+            Servicios = $serviciosEvaluados
         }
     }
-    [PSCustomObject]@{
-        Titulo    = $categoria.Titulo
-        Servicios = $serviciosEvaluados
-    }
-}
 
-#endregion
+    # -- Hallazgos: servicios innecesarios activos --
+    $serviciosActivos = @($Resultados | ForEach-Object { $_.Servicios } | Where-Object { $_.Estado -eq "Running" })
 
-#region PRESENTACION
-
-Write-Section "SERVICIOS INNECESARIOS" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "Solo muestra estado. No desactiva ni modifica nada." -Level NOTE -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-
-foreach ($categoria in $Resultados) {
-    Write-Section $categoria.Titulo -LogFile $LogFile
-    Write-Blank -LogFile $LogFile
-
-    foreach ($svc in $categoria.Servicios) {
-        $tag   = Get-CenteredTag -Text $svc.Estado -TotalWidth 9
-        $linea = "{0,-18} {1} {2}" -f $svc.Nombre, $tag, $svc.Descripcion
-        Write-Log $linea -Level $svc.Nivel -LogFile $LogFile
+    foreach ($svc in $serviciosActivos) {
+        Add-ReportError -Report $script:report -Message "Servicio innecesario activo: $($svc.Nombre) ($($svc.Descripcion))" -Severity WARNING -Source SYSTEM
     }
 
+    #endregion
+
+    #region PRESENTACION
+
+    Write-Section "SERVICIOS INNECESARIOS" -LogFile $LogFile
     Write-Blank -LogFile $LogFile
+    Write-Log "Solo muestra estado. No desactiva ni modifica nada." -Level NOTE -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    foreach ($categoria in $Resultados) {
+        Write-Section $categoria.Titulo -LogFile $LogFile
+        Write-Blank -LogFile $LogFile
+
+        foreach ($svc in $categoria.Servicios) {
+            $tag   = Get-CenteredTag -Text $svc.Estado -TotalWidth 9
+            $linea = "{0,-18} {1} {2}" -f $svc.Nombre, $tag, $svc.Descripcion
+            Write-Log $linea -Level $svc.Nivel -LogFile $LogFile
+        }
+
+        Write-Blank -LogFile $LogFile
+    }
+
+    #endregion
+
+    #region REFERENCIA DE COMANDOS
+
+    Write-Section "REFERENCIA DE COMANDOS" -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Write-Log "Para deshabilitar un servicio:" -Level NOTE -LogFile $LogFile
+    Write-Log "  Stop-Service -Name 'NombreServicio' -Force" -Level NOTE -LogFile $LogFile
+    Write-Log "  Set-Service  -Name 'NombreServicio' -StartupType Disabled" -Level NOTE -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+    Write-Log "Para reactivar un servicio:" -LogFile $LogFile -Level NOTE
+    Write-Log "  Set-Service  -Name 'NombreServicio' -StartupType Automatic" -Level NOTE -LogFile $LogFile
+    Write-Log "  Start-Service -Name 'NombreServicio'" -Level NOTE -LogFile $LogFile
+    Write-Blank -LogFile $LogFile
+
+    #endregion
+
+    #region REPORTE
+
+    $script:report.data = @{
+        categorias = @($Resultados | ForEach-Object {
+            @{
+                titulo = $_.Titulo
+                servicios = @($_.Servicios | Select-Object Nombre, Estado, Descripcion)
+            }
+        })
+        totalActivos = @($serviciosActivos).Count
+    }
+
+    $status = if (@($script:report.errors | Where-Object { $_.severity -eq "ERROR" }).Count -gt 0) { "ERROR" } else { "OK" }
+    $script:report = Complete-ModuleReport -Report $script:report -Status $status
+
+    #endregion
+
+} catch {
+    Write-Log "Error fatal en el modulo: $($_.Exception.Message)" -Level ERROR -LogFile $LogFile
+    Add-ReportError -Report $script:report -Message $_.Exception.Message -Severity ERROR -Source TOOLKIT
+    $script:report = Complete-ModuleReport -Report $script:report -Status "ERROR"
+} finally {
+    Save-ModuleReport -Report $script:report -ReportFile $reportFile
 }
 
-#endregion
-
-#region REFERENCIA DE COMANDOS
-
-Write-Section "REFERENCIA DE COMANDOS" -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "Para deshabilitar un servicio:" -Level NOTE -LogFile $LogFile
-Write-Log "  Stop-Service -Name 'NombreServicio' -Force" -Level NOTE -LogFile $LogFile
-Write-Log "  Set-Service  -Name 'NombreServicio' -StartupType Disabled" -Level NOTE -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-Write-Log "Para reactivar un servicio:" -LogFile $LogFile -Level NOTE
-Write-Log "  Set-Service  -Name 'NombreServicio' -StartupType Automatic" -Level NOTE -LogFile $LogFile
-Write-Log "  Start-Service -Name 'NombreServicio'" -Level NOTE -LogFile $LogFile
-Write-Blank -LogFile $LogFile
-
-#endregion
-
-#region RESUMEN
+#region SALIDA
 
 Write-Section -LogFile $LogFile
 Write-Log "Log guardado en: $LogFile" -LogFile $LogFile
