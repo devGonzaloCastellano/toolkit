@@ -95,6 +95,7 @@ function Show-Menu {
     Write-Host "   -- UTILIDADES --"                 -ForegroundColor DarkCyan
     Write-Host "   [13]  Activar God Mode"
     Write-Host "   [14]  Mapa de red local"
+    Write-Host "   [15]  Reinicio y apagado"
     Write-Host ""
 
     Write-Host "  ==================================================" -ForegroundColor Cyan
@@ -139,6 +140,7 @@ $ModuleMap = @{
     "12" = "defender.ps1"
     "13" = "godmode.ps1"
     "14" = "mapa_red.ps1"
+    "15" = "reinicio.ps1"
 }
 
 #endregion
