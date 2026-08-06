@@ -41,6 +41,8 @@ if (-not $NoElevation) {
 
 #region CONFIGURACION VISUAL
 
+[System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::InvariantCulture
+
 $Host.UI.RawUI.BackgroundColor = "Black"
 $Host.UI.RawUI.ForegroundColor = "White"
 Clear-Host
