@@ -1,0 +1,25 @@
+{
+  "descripcion" : "Puertos estandar del sistema operativo y protocolos comunes (HTTP, DNS, RDP, etc.), considerados seguros cuando el proceso asociado es el esperado.",
+  "ultimaActualizacion" : "07-08-2026",
+  "items" :
+          {
+            "80": "HTTP",
+            "443": "HTTPS",
+            "135": "RPC",
+            "139": "NetBIOS",
+            "445": "SMB",
+            "3389": "RDP - Verificar si es intencional",
+            "5040": "WSD (Windows)",
+            "5357": "WSD (Windows)",
+            "7680": "WUDO - Windows Update",
+            "1900": "SSDP/UPnP",
+            "5353": "mDNS",
+            "53": "DNS",
+            "67": "DHCP Server",
+            "68": "DHCP Client",
+            "123": "NTP",
+            "8080": "HTTP alternativo",
+            "8443": "HTTPS alternativo",
+            "49152": "RPC dinamico"
+          }
+}

@@ -1,0 +1,23 @@
+{
+  "descripcion" : "Aplicaciones de terceros conocidas y de uso habitual (navegadores, IDEs, mensajeria, utilitarios). Su presencia no representa riesgo.",
+  "ultimaActualizacion" : "07-08-2026",
+  "items" :
+          [
+            "chrome", "msedge", "firefox", "opera", "brave",
+            "code", "idea64", "idea", "webstorm", "pycharm", "clion",
+            "java", "javaw", "node", "python", "python3",
+            "slack", "discord", "teams", "zoom", "skype",
+            "spotify", "vlc", "mpv", "OfficeClickToRun",
+            "git", "git-bash", "OneDrive.Sync.Service",
+            "docker", "com.docker.backend", "com.docker.proxy",
+            "powershell", "pwsh", "cmd", "WindowsTerminal", "wt",
+            "notepad", "notepad++", "sublime_text",
+            "OneDrive", "dropbox", "CalculatorApp",
+            "steamwebhelper", "steam", "EpicGamesLauncher",
+            "AdobeCollabSync", "acrobat", "acrocef",
+            "SecurityHealthSystray", "EPPCCMON", "EPSDNMON",
+            "remoting_host", "crash_handler", "PaintStudio.View",
+            "jusched", "armsvc", "CCXProcess", "AdobeIPCBroker",
+            "EpSecuritySupport"
+          ]
+}

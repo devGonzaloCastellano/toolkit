@@ -1,0 +1,19 @@
+{
+  "descripcion" : "Puertos asociados a malware, herramientas de hacking o backdoors conocidos (Metasploit, Back Orifice, NetBus, entre otros). Su presencia no es definitiva pero requiere investigacion inmediata.",
+  "ultimaActualizacion" :  "07-08-2026",
+  "items" :
+          {
+            "4444": "Metasploit default - RIESGO ALTO",
+            "1337": "Leet/Backdoor - RIESGO ALTO",
+            "31337": "Back Orifice - RIESGO ALTO",
+            "12345": "NetBus - RIESGO ALTO",
+            "54321": "Back Orifice 2000 - RIESGO ALTO",
+            "9001": "Tor relay - Revisar",
+            "9050": "Tor proxy - Revisar",
+            "6667": "IRC (usado por botnets) - Revisar",
+            "1080": "SOCKS proxy - Revisar",
+            "3128": "Squid proxy - Revisar",
+            "8888": "Backdoor comun - Revisar",
+            "2222": "SSH alternativo - Revisar"
+          }
+}

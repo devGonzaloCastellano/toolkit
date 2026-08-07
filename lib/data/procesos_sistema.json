@@ -1,0 +1,20 @@
+{
+  "descripcion" : "Procesos del sistema operativo Windows y componentes asociados, considerados confiables por defecto. Usado tanto para clasificar procesos en la auditoria general como para identificar conexiones de red legitimas originadas por el propio sistema.",
+  "ultimaActualizacion" : "07-08-2026",
+  "items" :
+          [
+            "svchost", "lsass", "services", "wininit", "winlogon", "csrss", "smss",
+            "System", "Registry", "Idle", "spoolsv", "SearchIndexer", "SearchHost",
+            "MsMpEng", "NisSrv", "MpDefenderCoreService", "SecurityHealthService",
+            "dasHost", "WmiPrvSE", "RuntimeBroker", "taskhostw", "taskeng",
+            "explorer", "dwm", "fontdrvhost", "LogonUI", "userinit",
+            "audiodg", "conhost", "dllhost", "sihost", "ctfmon",
+            "smartscreen", "ShellExperienceHost", "StartMenuExperienceHost",
+            "TextInputHost", "ApplicationFrameHost", "SystemSettingsBroker",
+            "LsaIso", "SgrmBroker", "sppsvc", "TrustedInstaller",
+            "WUDFHost", "wlanext", "WmiApSrv", "msdtc", "vmcompute",
+            "vmmem", "vmwp", "Memory Compression", "SearchApp", "splwow64",
+            "backgroundTaskHost", "UserOOBEBroker", "AggregatorHost", "CompPkgSrv",
+            "SystemSettings", "Video.UI"
+          ]
+}
