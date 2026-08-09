@@ -49,51 +49,24 @@ $script:report = New-ModuleReport -ModuleName "procesos"
 
 #region DATOS - TABLAS DE CLASIFICACION
 
-# Procesos del sistema operativo Windows considerados seguros
-$ProcesosSistema = @(
-    "svchost", "lsass", "services", "wininit", "winlogon", "csrss", "smss",
-    "System", "Registry", "Idle", "spoolsv", "SearchIndexer", "SearchHost",
-    "MsMpEng", "NisSrv", "MpDefenderCoreService", "SecurityHealthService",
-    "dasHost", "WmiPrvSE", "RuntimeBroker", "taskhostw", "taskeng",
-    "explorer", "dwm", "fontdrvhost", "LogonUI", "userinit",
-    "audiodg", "conhost", "dllhost", "sihost", "ctfmon",
-    "smartscreen", "ShellExperienceHost", "StartMenuExperienceHost",
-    "TextInputHost", "ApplicationFrameHost", "SystemSettingsBroker",
-    "LsaIso", "SgrmBroker", "sppsvc", "TrustedInstaller",
-    "WUDFHost", "wlanext", "WmiApSrv", "msdtc", "vmcompute",
-    "vmmem", "vmwp", "Memory Compression", "SearchApp", "splwow64",
-    "backgroundTaskHost", "UserOOBEBroker", "AggregatorHost", "CompPkgSrv",
-    "SystemSettings", "Video.UI"
-)
+$ProcesosSistema = @(Import-DataList -FileName "procesos_sistema.json")
+$ProcesosAplicaciones = @(Import-DataList -FileName "procesos_aplicaciones.json")
+$ProcesosMalware = @(Import-DataList -FileName "procesos_malware.json")
 
-# Procesos de aplicaciones conocidas y legitimas
-$ProcesosAplicaciones = @(
-    "chrome", "msedge", "firefox", "opera", "brave",
-    "code", "idea64", "idea", "webstorm", "pycharm", "clion",
-    "java", "javaw", "node", "python", "python3",
-    "slack", "discord", "teams", "zoom", "skype",
-    "spotify", "vlc", "mpv", "OfficeClickToRun",
-    "git", "git-bash", "OneDrive.Sync.Service",
-    "docker", "com.docker.backend", "com.docker.proxy",
-    "powershell", "pwsh", "cmd", "WindowsTerminal", "wt",
-    "notepad", "notepad++", "sublime_text",
-    "OneDrive", "dropbox", "CalculatorApp",
-    "steamwebhelper", "steam", "EpicGamesLauncher",
-    "AdobeCollabSync", "acrobat", "acrocef",
-    "SecurityHealthSystray", "EPPCCMON", "EPSDNMON",
-    "remoting_host", "crash_handler", "PaintStudio.View",
-    "jusched", "armsvc", "CCXProcess", "AdobeIPCBroker",
-    "EpSecuritySupport"
-)
+if(@($ProcesosSistema).Count -eq 0){
+    Write-Log "Listado de procesos de sistema no disponible, la clasificacion puede ser menos precisa" -Level WARNING -LogFile $LogFile
+    Add-ReportError -Report $script:report -Message "Listado procesos_sistema.json no disponible o vacio" -Severity WARNING -Source TOOLKIT
+}
 
-# Nombres de procesos asociados a malware conocido
-# Presencia no es definitiva pero requiere investigacion inmediata
-$ProcesosMalware = @(
-    "njrat", "darkcomet", "nanocore", "remcos", "asyncrat",
-    "netbus", "subseven", "bifrost", "poison_ivy",
-    "mimikatz", "procdump", "wce", "pwdump",
-    "meterpreter", "msf", "payload"
-)
+if(@($ProcesosAplicaciones).Count -eq 0){
+    Write-Log "Listado de procesos de sistema no disponible, la clasificacion puede ser menos precisa" -Level WARNING -LogFile $LogFile
+    Add-ReportError -Report $script:report -Message "Listado procesos_aplicaciones.json no disponible o vacio" -Severity WARNING -Source TOOLKIT
+}
+
+if(@($ProcesosMalware).Count -eq 0){
+    Write-Log "Listado de procesos de sistema no disponible, la clasificacion puede ser menos precisa" -Level ERROR -LogFile $LogFile
+    Add-ReportError -Report $script:report -Message "Listado procesos_malware.json no disponible o vacio" -Severity WARNING -Source TOOLKIT
+}
 
 #endregion
 
