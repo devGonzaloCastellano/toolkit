@@ -50,54 +50,22 @@ $script:report = New-ModuleReport -ModuleName "puertos"
 
 #region DATOS - TABLAS DE CLASIFICACION
 
-# Puertos conocidos del sistema y aplicaciones comunes
-# Clasificados como seguros cuando el proceso asociado es el esperado
-$PuertosConocidos = @{
-    80    = "HTTP"
-    443   = "HTTPS"
-    135   = "RPC"
-    139   = "NetBIOS"
-    445   = "SMB"
-    3389  = "RDP - Verificar si es intencional"
-    5040  = "WSD (Windows)"
-    5357  = "WSD (Windows)"
-    7680  = "WUDO - Windows Update"
-    1900  = "SSDP/UPnP"
-    5353  = "mDNS"
-    53    = "DNS"
-    67    = "DHCP Server"
-    68    = "DHCP Client"
-    123   = "NTP"
-    8080  = "HTTP alternativo"
-    8443  = "HTTPS alternativo"
-    49152 = "RPC dinamico"
-}
+$PuertosConocidos = Import-DataList -FileName "puertos_conocidos.json" -AsHashtable
+$PuertosRiesgo = Import-DataList -FileName "puertos_riesgo.json" -AsHashtable
+$ProcesosSistema = Import-DataList -FileName "procesos_sistema.json"
 
-# Puertos asociados a malware, herramientas de hacking o backdoors conocidos
-# Su presencia no es definitiva pero requiere investigacion inmediata
-$PuertosRiesgo = @{
-    4444  = "Metasploit default - RIESGO ALTO"
-    1337  = "Leet/Backdoor - RIESGO ALTO"
-    31337 = "Back Orifice - RIESGO ALTO"
-    12345 = "NetBus - RIESGO ALTO"
-    54321 = "Back Orifice 2000 - RIESGO ALTO"
-    9001  = "Tor relay - Revisar"
-    9050  = "Tor proxy - Revisar"
-    6667  = "IRC (usado por botnets) - Revisar"
-    1080  = "SOCKS proxy - Revisar"
-    3128  = "Squid proxy - Revisar"
-    8888  = "Backdoor comun - Revisar"
-    2222  = "SSH alternativo - Revisar"
+if($PuertosConocidos.Count -eq 0){
+    Write-Log "Listado de puertos conocidos no disponible, la clasificacion puede ser menos precisa" -Level WARNING -LogFile $LogFile
+    Add-ReportError -Report $script:report -Message "Listado puertos_conocidos.json no disponible o vacio" -Severity WARNING -Source TOOLKIT
 }
-
-# Procesos del sistema operativo que se consideran confiables
-$ProcesosConfiables = @(
-    "svchost", "lsass", "services", "wininit", "winlogon",
-    "explorer", "csrss", "smss", "System", "Registry",
-    "spoolsv", "SearchIndexer", "MsMpEng", "NisSrv",
-    "dasHost", "WmiPrvSE", "RuntimeBroker", "taskhostw",
-    "smartscreen", "MpDefenderCoreService"
-)
+if ($PuertosRiesgo.Count -eq 0) {
+    Write-Log "Listado de puertos de riesgo no disponible, no se detectaran coincidencias por puerto." -Level ERROR -LogFile $LogFile
+    Add-ReportError -Report $script:report -Message "Listado puertos_riesgo.json no disponible o vacio" -Severity WARNING -Source TOOLKIT
+}
+if (@($ProcesosSistema).Count -eq 0) {
+    Write-Log "Listado de procesos de sistema no disponible, la clasificacion puede ser menos precisa." -Level WARNING -LogFile $LogFile
+    Add-ReportError -Report $script:report -Message "Listado procesos_sistema.json no disponible o vacio" -Severity WARNING -Source TOOLKIT
+}
 
 #endregion
 
@@ -160,7 +128,7 @@ function Get-ClasificacionPuerto {
 
     # Prioridad 2: conexion externa con proceso desconocido -> WARNING
     $esExterno   = -not (Test-IPLocal -IP $IPRemota)
-    $esConfiable = $ProcesosConfiables -contains $Proceso
+    $esConfiable = $ProcesosSistema -contains $Proceso
 
     if ($esExterno -and -not $esConfiable) {
         return [PSCustomObject]@{ Nivel = "WARNING"; Descripcion = "Conexion externa - proceso no reconocido" }
