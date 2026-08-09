@@ -308,6 +308,8 @@ function Test-InternetConnection {
     }
 }
 
+#endregion
+
 #region CANCELACION GLOBAL
 
 <#
@@ -374,5 +376,61 @@ function Set-CurrentExecution {
 }
 
 #endregion
+
+#region CARGA DE DATOS EXTERNALIZADOS
+
+<#
+.SYNOPSIS
+    Carga un listado de datos externalizado desde lib/data/.
+.DESCRIPTION
+    Lee un archivo JSON con formato {descripcion, ultimaActualizacion, items}
+    y devuelve el contenido de 'items'. Soporta tanto arrays simples
+    (listas de procesos) como tablas clave-valor (puertos), convirtiendo
+    estas ultimas a hashtable real para poder usar metodos como ContainsKey.
+    Si el archivo no existe o esta corrupto, no interrumpe la ejecucion:
+    registra el error y devuelve una coleccion vacia del tipo esperado.
+.PARAMETER FileName
+    Nombre del archivo dentro de lib/data/ (ej: "procesos_sistema.json").
+.PARAMETER AsHashtable
+    Si se indica, convierte 'items' a hashtable con claves enteras
+    (para tablas puerto->descripcion). Sin este switch, devuelve el
+    array tal cual lo entrega ConvertFrom-Json.
+.OUTPUTS
+    Array de strings, o hashtable si se usa -AsHashtable.
+    Coleccion vacia del tipo correspondiente si la carga falla.
+.EXAMPLE
+    $ProcesosSistema = Import-DataList -FileName "procesos_sistema.json"
+    $PuertosRiesgo = Import-DataList -FileName "puertos_riesgo.json" -AsHashtable
+#>
+function Import-DataList {
+    param(
+        [Parameter(Mandatory)]
+        [string]$FileName,
+
+        [switch]$AsHashtable
+    )
+
+    $path = Join-Path $PSScriptRoot "data\$FileName"
+
+    try {
+        $archivo   = Get-Content -Path $path -Raw -ErrorAction Stop | ConvertFrom-Json
+        $contenido = $archivo.items
+
+        if ($AsHashtable) {
+            $tabla = @{}
+            $contenido.PSObject.Properties | ForEach-Object {
+                $tabla[[int]$_.Name] = $_.Value
+            }
+            return $tabla
+        }
+
+        return $contenido
+
+    } catch {
+        Write-Log "No se pudo cargar el listado de datos '$FileName': $($_.Exception.Message)" -Level ERROR
+        if ($AsHashtable) { return @{} }
+        return @()
+    }
+}
 
 #endregion
