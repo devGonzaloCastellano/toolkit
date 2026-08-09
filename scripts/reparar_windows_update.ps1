@@ -54,22 +54,14 @@ $script:pasosResultado = @()
 
 # DLLs que Windows Update necesita registradas correctamente para funcionar.
 # Se re-registran con regsvr32 para reparar instalaciones corruptas.
-$DllsUpdate = @(
-    "atl.dll", "urlmon.dll", "mshtml.dll",
-    "shdocvw.dll", "browseui.dll",
-    "jscript.dll", "vbscript.dll",
-    "scrrun.dll", "msxml.dll", "msxml3.dll", "msxml6.dll",
-    "actxprxy.dll", "softpub.dll", "wintrust.dll",
-    "dssenh.dll", "rsaenh.dll", "gpkcsp.dll", "sccbase.dll",
-    "slbcsp.dll", "cryptdlg.dll", "oleaut32.dll", "ole32.dll",
-    "shell32.dll", "wuapi.dll", "wuaueng.dll", "wuaueng1.dll",
-    "wucltui.dll", "wups.dll", "wups2.dll", "wuweb.dll",
-    "qmgr.dll", "qmgrprxy.dll", "wucltux.dll", "muweb.dll",
-    "wuwebv.dll"
-)
 
-# Servicios de Windows Update que deben detenerse antes de limpiar
-# y reiniciarse al finalizar
+$DllsUpdate = @(Import-DataList -FileName "dlls_windows_update.json")
+
+if (@($DllsUpdate).Count -eq 0) {
+    Write-Log "Listado de DLLs de Windows Update no disponible, no se intentara re-registrar ninguna." -Level ERROR -LogFile $LogFile
+    Add-ReportError -Report $script:report -Message "Listado dlls_windows_update.json no disponible o vacio" -Severity WARNING -Source TOOLKIT
+}
+
 $ServiciosUpdate = @("wuauserv", "cryptSvc", "bits", "msiserver")
 
 #endregion
@@ -190,27 +182,32 @@ try{
     }
 
     # -- Paso 6: Re-registrar DLLs --
-    $script:dllErrores = 0
+    $script:dllErrores = @()
     Invoke-PasoReparacion -Numero 6 -Total $totalPasos `
     -Titulo "Re-registrar DLLs de Windows Update" `
     -Descripcion "Intenta registrar nuevamente componentes utilizados por Windows Update." `
     -Accion {
-        $errores = 0
+        if (@($DllsUpdate).Count -eq 0) {
+            Write-Log "  Sin listado de DLLs cargado, no se intento registrar ninguna." -Level WARNING -LogFile $LogFile
+            return
+        }
+
+        $errores = @()
         foreach ($dll in $DllsUpdate) {
             $result = Start-Process -FilePath "regsvr32.exe" `
                 -ArgumentList "/s $dll" -Wait -PassThru -ErrorAction SilentlyContinue
-            if ($result.ExitCode -ne 0) { $errores++ }
+            if ($result.ExitCode -ne 0) { $errores += $dll }
         }
         $script:dllErrores = $errores
-        if ($errores -gt 0) {
-            Write-Log "Componentes omitidos: $errores" -Level WARNING -LogFile $LogFile
+
+        if (@($errores).Count -gt 0) {
+            Write-Log "Componentes omitidos: $($errores -join ' ')" -Level WARNING -LogFile $LogFile
             Write-Log "Algunos componentes ya no existen o no requieren registro en esta version de Windows." -Level NOTE -LogFile $LogFile
-            Add-ReportError -Report $script:report -Message "$errores de $($DllsUpdate.Count) DLLs no se pudieron registrar (posible listado desactualizado, ver deuda tecnica)" -Severity WARNING -Source SYSTEM
+            Add-ReportError -Report $script:report -Message "$(@($errores).Count) de $($DllsUpdate.Count) DLLs no se pudieron registrar: $($errores -join ', ')" -Severity WARNING -Source SYSTEM
         } else {
             Write-Log "  Todas las DLLs registradas correctamente." -LogFile $LogFile
         }
     }
-
     #endregion
 
     #region RESUMEN
