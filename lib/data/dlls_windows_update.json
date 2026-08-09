@@ -1,0 +1,17 @@
+{
+  "descripcion": "DLLs que Windows Update necesita registradas correctamente para funcionar. Se re-registran con regsvr32 para reparar instalaciones corruptas. Listado verificado contra la documentacion oficial de Microsoft Learn (troubleshoot/windows-client/installing-updates-features-roles/additional-resources-for-windows-update). Nota: wuaueng.dll no exporta DllRegisterServer y siempre devuelve error al intentar registrarla, incluso en un Windows sano - no es un indicador de problema real, es un falso positivo conocido del propio comando regsvr32.",
+  "ultimaActualizacion": "09/08/2026",
+  "items": [
+    "atl.dll", "urlmon.dll", "mshtml.dll",
+    "shdocvw.dll", "browseui.dll",
+    "jscript.dll", "vbscript.dll",
+    "scrrun.dll", "msxml.dll", "msxml3.dll", "msxml6.dll",
+    "actxprxy.dll", "softpub.dll", "wintrust.dll",
+    "dssenh.dll", "rsaenh.dll", "gpkcsp.dll", "sccbase.dll",
+    "slbcsp.dll", "cryptdlg.dll", "oleaut32.dll", "ole32.dll",
+    "shell32.dll", "initpki.dll", "wuapi.dll", "wuaueng.dll", "wuaueng1.dll",
+    "wucltui.dll", "wups.dll", "wups2.dll", "wuweb.dll",
+    "qmgr.dll", "qmgrprxy.dll", "wucltux.dll", "muweb.dll",
+    "wuwebv.dll"
+  ]
+}
