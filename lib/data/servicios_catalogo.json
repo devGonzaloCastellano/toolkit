@@ -1,0 +1,37 @@
+{
+  "descripcion": "Catalogo de servicios de Windows considerados innecesarios o de uso raro para la mayoria de los equipos, agrupados por categoria. Se usa solo para auditoria: el modulo no desactiva ni modifica nada.",
+  "ultimaActualizacion": "10/08/2026",
+  "items": [
+    {
+      "titulo": "TELEMETRIA Y DIAGNOSTICO",
+      "servicios": [
+        { "nombre": "DiagTrack", "descripcion": "Telemetria de uso y diagnostico hacia Microsoft" },
+        { "nombre": "dmwappushservice", "descripcion": "Enrutamiento de mensajes WAP (usado por telemetria)" },
+        { "nombre": "PcaSvc", "descripcion": "Asistente de compatibilidad de programas" },
+        { "nombre": "WerSvc", "descripcion": "Informe de errores de Windows" }
+      ]
+    },
+    {
+      "titulo": "XBOX Y GAMING",
+      "servicios": [
+        { "nombre": "XblAuthManager", "descripcion": "Autenticacion de cuenta Xbox Live" },
+        { "nombre": "XblGameSave", "descripcion": "Sincronizacion de partidas guardadas Xbox" },
+        { "nombre": "XboxNetApiSvc", "descripcion": "API de red para funciones Xbox" },
+        { "nombre": "XboxGipSvc", "descripcion": "Protocolo de entrada para accesorios Xbox" }
+      ]
+    },
+    {
+      "titulo": "SERVICIOS RARAMENTE USADOS",
+      "servicios": [
+        { "nombre": "Fax", "descripcion": "Envio y recepcion de faxes" },
+        { "nombre": "MapsBroker", "descripcion": "Descarga de mapas offline" },
+        { "nombre": "RetailDemo", "descripcion": "Modo demostracion para tiendas" },
+        { "nombre": "RemoteRegistry", "descripcion": "Permite edicion remota del registro" },
+        { "nombre": "WMPNetworkSvc", "descripcion": "Compartir biblioteca de Windows Media Player" },
+        { "nombre": "icssvc", "descripcion": "Zona de acceso movil (hotspot)" },
+        { "nombre": "lfsvc", "descripcion": "Servicio de geolocalizacion" },
+        { "nombre": "SharedAccess", "descripcion": "Compartir conexion a internet (ICS)" }
+      ]
+    }
+  ]
+}
