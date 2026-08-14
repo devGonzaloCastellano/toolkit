@@ -49,41 +49,12 @@ $script:report = New-ModuleReport -ModuleName "servicios"
 
 #region DATOS - CATALOGO DE SERVICIOS
 
-# Cada entrada define el nombre tecnico del servicio y una descripcion
-# legible para que el tecnico entienda para que sirve sin tener que buscarlo.
-$Categorias = @(
-    @{
-        Titulo    = "TELEMETRIA Y DIAGNOSTICO"
-        Servicios = @(
-            @{ Nombre = "DiagTrack";        Descripcion = "Telemetria de uso y diagnostico hacia Microsoft" },
-            @{ Nombre = "dmwappushservice"; Descripcion = "Enrutamiento de mensajes WAP (usado por telemetria)" },
-            @{ Nombre = "PcaSvc";           Descripcion = "Asistente de compatibilidad de programas" },
-            @{ Nombre = "WerSvc";           Descripcion = "Informe de errores de Windows" }
-        )
-    },
-    @{
-        Titulo    = "XBOX Y GAMING"
-        Servicios = @(
-            @{ Nombre = "XblAuthManager";  Descripcion = "Autenticacion de cuenta Xbox Live" },
-            @{ Nombre = "XblGameSave";     Descripcion = "Sincronizacion de partidas guardadas Xbox" },
-            @{ Nombre = "XboxNetApiSvc";   Descripcion = "API de red para funciones Xbox" },
-            @{ Nombre = "XboxGipSvc";      Descripcion = "Protocolo de entrada para accesorios Xbox" }
-        )
-    },
-    @{
-        Titulo    = "SERVICIOS RARAMENTE USADOS"
-        Servicios = @(
-            @{ Nombre = "Fax";             Descripcion = "Envio y recepcion de faxes" },
-            @{ Nombre = "MapsBroker";      Descripcion = "Descarga de mapas offline" },
-            @{ Nombre = "RetailDemo";      Descripcion = "Modo demostracion para tiendas" },
-            @{ Nombre = "RemoteRegistry";  Descripcion = "Permite edicion remota del registro" },
-            @{ Nombre = "WMPNetworkSvc";   Descripcion = "Compartir biblioteca de Windows Media Player" },
-            @{ Nombre = "icssvc";          Descripcion = "Zona de acceso movil (hotspot)" },
-            @{ Nombre = "lfsvc";           Descripcion = "Servicio de geolocalizacion" },
-            @{ Nombre = "SharedAccess";    Descripcion = "Compartir conexion a internet (ICS)" }
-        )
-    }
-)
+$Categorias = @(Import-DataList -FileName "servicios_catalogo.json")
+
+if (@($Categorias).Count -eq 0) {
+    Write-Log "Catalogo de servicios no disponible, no se realizara la auditoria." -Level ERROR -LogFile $LogFile
+    Add-ReportError -Report $script:report -Message "Listado servicios_catalogo.json no disponible o vacio" -Severity WARNING -Source TOOLKIT
+}
 
 #endregion
 
