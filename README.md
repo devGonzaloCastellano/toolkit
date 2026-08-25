@@ -11,11 +11,9 @@ Toolkit portable desarrollado en PowerShell para tareas de:
 Diseñado con un enfoque modular y portable, 
 pensado para asistencia técnica y troubleshooting en entornos Windows.
 
-Actualmente, el sistema se encuentra en su Versión 2 (v2.1.0).
+Actualmente, el sistema se encuentra en su Versión 3 (v3.0.0).
 
 ---
-
-
 
 ## ⚡ Uso rápido
 1. Clonar o descargar el repositorio
@@ -24,13 +22,13 @@ Actualmente, el sistema se encuentra en su Versión 2 (v2.1.0).
 
 > El launcher solicita elevación UAC automáticamente.
 > Todos los módulos corren en la misma ventana de PowerShell.
+> Ctrl + C cancela la ejecución en cualquier momento, incluso durante módulos largos.
 ---
 
-## Funcionalidades
+## 🧰 Funcionalidades
 
 ### 🖥 Diagnóstico del sistema
 - Información completa de hardware y software
-- CPU con temperatura (si el fabricante la expone)
 - RAM física real vs disponible para el SO (incluye memoria reservada por GPU integrada)
 - Detalle por módulo RAM (slot, modelo, fabricante, velocidad)
 - GPU con VRAM, resolución y versión de driver
@@ -40,13 +38,14 @@ Actualmente, el sistema se encuentra en su Versión 2 (v2.1.0).
 - Red: IP, MAC, gateway, DNS
 - Servicios críticos: Defender, Firewall, Windows Update
 - Diagnostico general con semáforo visual al final
-- Estado del disco con chkdsk y top 10 carpetas más pesadas
+- Estado del disco con chkdsk y top 10 carpetas más pesadas (con exclusión automática de la unidad de origen del toolkit)
 - Procesos agrupados con clasificación por origen y nivel de riesgo
 
 ### 🌐 Red y conectividad
 - Reparación de red automática (flush DNS, reset IP, Winsock, TCP/IP, proxy)
 - Mapa de red local con escaneo de dispositivos via ping paralelo
 - Tabla ARP con dispositivos recientes
+- Detección de direcciones IP APIPA (169.254.x.x), tanto en el equipo local como en dispositivos escaneados
 - Auditoria de puertos con clasificación de riesgo por puerto y proceso
 
 ### 👥 Auditoría y seguridad
@@ -63,21 +62,30 @@ Actualmente, el sistema se encuentra en su Versión 2 (v2.1.0).
 - Limpieza de temporales (usuario, sistema, recientes, cache WU)
 - Limpieza de Prefetch opcional con explicación del impacto
 - Flush DNS y vaciado de papelera
-- Disk Cleanup automatizado
+- Instrucciones para limpieza adicional manual (Disk Cleanup) cuando se necesite una pasada más profunda
 - Conteo de items eliminados y espacio liberado
 
-### Reparación
+### 🛠 Reparación
 - SFC y DISM con progreso en tiempo real y tiempo transcurrido
 - Reparación de Windows Update (servicios, cache, registro, DLLs)
 - Reparación de red con díagnostico antes y después
 
-### Utilidades
+### 🔌 Energía
+- Reinicio normal
+- Reinicio forzado 
+- Reinicio a BIOS/UEFI 
+- Reinicio a Opciones de Recuperación (WinRE) 
+- Apagado
+
+> todos con confirmación previa y detección de tipo de firmware
+
+### 🗂 Utilidades
 - God Mode en el Escritorio
 - Actualización de Windows Defender con escaneo rápido y completo opcionales
 
 ---
 
-## Screenshots
+## 📸 Screenshots
 
 <table>
   <tr>
@@ -103,7 +111,7 @@ Actualmente, el sistema se encuentra en su Versión 2 (v2.1.0).
 </table>
 
 ---
-## Arquitectura del proyecto
+## 🏛 Arquitectura del proyecto
 
 ### Estructura 
 
@@ -112,15 +120,25 @@ toolkit/
 |-- launcher.bat
 |-- menu.ps1
 |-- lib/
-|   `-- Utils.ps1
+|   |-- Utils.ps1
+|   |-- Reporting.ps1
+|   `-- data/
+|       |-- procesos_sistema.json
+|       |-- procesos_aplicaciones.json
+|       |-- procesos_malware.json
+|       |-- puertos_conocidos.json
+|       |-- puertos_riesgo.json
+|       |-- dlls_windows_update.json
+|       `-- servicios_catalogo.json
 |-- scripts/
 |   |-- defender.ps1
 |   |-- godmode.ps1
 |   |-- info_sistema.ps1
-|   |-- mapa_red.ps1
 |   |-- limpieza.ps1
+|   |-- mapa_red.ps1
 |   |-- procesos.ps1
 |   |-- puertos.ps1
+|   |-- reinicio.ps1
 |   |-- reparar_red.ps1
 |   |-- reparar_sistema.ps1
 |   |-- reparar_windows_update.ps1
@@ -128,7 +146,8 @@ toolkit/
 |   |-- servicios.ps1
 |   |-- startup.ps1
 |   `-- usuarios.ps1
-`-- logs/
+|-- logs/
+`-- reports/
 ```
 La estructura está pensada para facilitar:
 - mantenibilidad
@@ -137,9 +156,89 @@ La estructura está pensada para facilitar:
 - escalabilidad futura
 
 ### lib/Utils.ps1
-Modulo compartido importado via dot-sourcing por todos los scripts.
+Módulo compartido importado via dot-sourcing por todos los scripts.
 Provee: `Write-Log`, `Write-Blank`, `Write-Section`, `Initialize-Environment`,
-`Test-IsAdmin`, `Invoke-Elevate`, `Format-Bytes`, `Invoke-Pause`.
+`Test-IsAdmin`, `Invoke-Elevate`, `Format-Bytes`, `Invoke-Pause`,
+`Get-CenteredTag`, `Test-InternetConnection`, `Import-DataList`,
+`Register-CancelHandler`, `Set-CurrentExecution`.
+
+Desde v3.0.0, `Register-CancelHandler` se invoca una única vez al arrancar
+`menu.ps1` y queda activo durante toda la vida del proceso: si el usuario
+cancela con **Ctrl + C** en cualquier momento (incluso a mitad de un módulo
+largo), la toolkit corta la ejecución de forma limpia, elimina el TXT en
+curso si existía, y muestra un aviso antes de cerrar. Cada módulo informa
+qué está corriendo con `Set-CurrentExecution` al inicio de su región de
+inicialización.
+
+### lib/Reporting.ps1
+Módulo independiente (separado de `Utils.ps1` a propósito, ya que tiene
+su propio ciclo de vida y versionado de schema) encargado de la
+generación de reportes estructurados en JSON. Provee:
+`Get-ReportFileName`, `New-ModuleReport`, `Complete-ModuleReport`,
+`Save-ModuleReport`, `Add-ReportError`.
+
+Cada módulo, al finalizar, guarda un reporte JSON en `reports/` con el
+mismo nombre base que su log TXT (agrupado por fecha corta, con sufijo
+numérico si se ejecuta más de una vez el mismo día). El TXT se mantiene
+como reporte de lectura humana; el JSON es la fuente estructurada que
+sirve de base para consolidación e informes futuros.
+
+**Schema del reporte** (`schemaVersion: "1.0"`):
+
+```json
+{
+  "schemaVersion": "1.0",
+  "toolkitVersion": "3.0.0",
+  "module": "reporte_disco",
+  "executionId": "20260710-143022",
+  "durationSeconds": 12.4,
+  "status": "OK | ERROR",
+  "data": { },
+  "errors": [
+    {
+      "message": "descripcion del hallazgo o fallo",
+      "severity": "WARNING | ERROR",
+      "source": "TOOLKIT | SYSTEM"
+    }
+  ]
+}
+```
+
+- **`status`**: `ERROR` únicamente si hubo un fallo real del toolkit
+  (`errors` con `severity: ERROR`); un `WARNING`, aunque exista, no baja
+  el status del módulo.
+- **`data`**: contenido específico de cada módulo — siempre datos
+  simples o resúmenes planos, nunca objetos CIM/WMI crudos (para evitar
+  reportes de miles de líneas de metadata irrelevante).
+- **`errors[].source`**: distingue si el problema es una falla del propio
+  toolkit (`TOOLKIT` — ej. no se pudo leer un listado, un cmdlet falló)
+  de un hallazgo real sobre el equipo auditado (`SYSTEM` — ej. una unidad
+  con errores, un servicio innecesario activo). Esta distinción es la que
+  en el futuro va a permitir separar "hay que revisar el toolkit" de
+  "hay que avisarle al cliente".
+
+### lib/data/
+Listados y catálogos externalizados fuera del código de cada módulo, en
+formato JSON con estructura `{ descripcion, ultimaActualizacion, items }`.
+Se cargan con `Import-DataList -FileName "archivo.json"` (o
+`-AsHashtable` para tablas clave-valor, como los puertos). Si un archivo
+no existe o está corrupto, el módulo correspondiente **no corta la
+ejecución**: degrada con una lista vacía, avisa en consola/log, y lo
+registra en el reporte como `TOOLKIT/WARNING`.
+
+| Archivo | Usado por |
+|---|---|
+| `procesos_sistema.json` | `procesos.ps1`, `puertos.ps1` (unificado) |
+| `procesos_aplicaciones.json` | `procesos.ps1` |
+| `procesos_malware.json` | `procesos.ps1` |
+| `puertos_conocidos.json` | `puertos.ps1` |
+| `puertos_riesgo.json` | `puertos.ps1` |
+| `dlls_windows_update.json` | `reparar_windows_update.ps1` |
+| `servicios_catalogo.json` | `servicios.ps1` |
+
+Mantener estos archivos actualizados (agregar aplicaciones legítimas
+nuevas, revisar puertos, etc.) es la forma prevista de reducir falsos
+positivos con el tiempo, sin tocar código.
 
 ### launcher.bat
 Unico archivo `.bat` del proyecto. Su unico trabajo es elevar PowerShell
@@ -157,8 +256,6 @@ DATOS           (Get-CimInstance, etc. - separado de la presentacion)
 LOGICA/PRESENTACION
 RESUMEN
 ```
-
-
 ---
 
 ## Compatibilidad
@@ -170,7 +267,7 @@ RESUMEN
 
 ---
 
-## Seguridad y Elevación de Privilegios
+## 🛡 Seguridad y Elevación de Privilegios
 El toolkit cuenta con un sistema de **auto-elevación de privilegios**.
 Al ejecutarse, el script verifica si cuenta con permisos de administrador; de no ser así, solicitará acceso mediante UAC (User Account Control) utilizando PowerShell.
 
@@ -179,45 +276,65 @@ Al ejecutarse, el script verifica si cuenta con permisos de administrador; de no
 - Consulta de información de hardware profunda (`wmic` / `CIM`).
 - Gestión de servicios críticos del sistema.
 - Limpieza de archivos temporales en directorios protegidos.
+- Reinicio/apagado del equipo (`shutdown.exe`).
 ---
 
-## Logs
+## Logs y Reportes
 
-Cada modúlo genera un log automatico en `/logs` con timestamp:
+Cada módulo genera, en la misma corrida, dos archivos:
 ```
 logs/
-|-- info_sistema_2026-05-31_10-57.txt
-|-- reporte_disco_2026-05-31_09-50.txt
+|-- info_sistema_2026-08-06_16-18.txt
+|-- reporte_disco_2026-07-24_17-55.txt
+`-- ...
+
+reports/
+|-- info_sistema_260806.json
+|-- reporte_disco_260724.json
 `-- ...
 ```
-
-El log contiene el mismo output que la consola, sin colores ANSI.
+- **`logs/*.txt`**: mismo output que la consola, sin colores ANSI. Pensado para lectura humana rápida durante o después del servicio.
+- **`reports/*.json`**: reporte estructurado (ver schema más arriba). Pensado como fuente de datos para consolidación e informes futuros.
 
 ---
 
-## Limitaciones conocidas
-- La temperatura de CPU depende de que el fabricante exponga el dato
-  via `MSAcpi_ThermalZoneTemperature`. En algunos equipos no está disponible.
-- El conteo de espacio liberado en limpieza no incluye Disk Cleanup,
-  ya que corre en segundo plano de forma asíncrona.
+## 🚧 Limitaciones conocidas
 - El escaneo de red (mapa_red) puede no detectar dispositivos que
-  bloquean ICMP (ping) en firewall.
+  bloquean ICMP (ping) o que están en modo de ahorro de energía WiFi
+  (celulares con pantalla apagada); la tabla ARP puede mostrar dispositivos
+  que el ping no confirma, y viceversa — ninguna de las dos fuentes por sí
+  sola garantiza el listado completo de dispositivos en la red.
 - Los eventos de seguridad en `usuarios.ps1` requieren que la auditoria
-  de inicio de sesión está habilitada en el sistema.
-
+  de inicio de sesión esté habilitada en el sistema.
+- Las listas de clasificación (procesos, puertos) en `lib/data/` reflejan
+  software conocido al momento de su última actualización; procesos o
+  conexiones legítimas no incluidos ahí pueden marcarse como
+  "desconocido" o "sospechoso" sin que eso implique un riesgo real —
+  ver `ultimaActualizacion` en cada archivo.
+- El OUI lookup (identificación de fabricante por MAC) fue evaluado y
+  pospuesto: la mayoría de los dispositivos móviles usan MAC aleatoria
+  por red, lo que vuelve el lookup poco confiable en el escenario típico
+  de uso del toolkit (domicilios/pymes con mayoría de celulares).
+- El módulo de reinicio a BIOS/UEFI puede no funcionar en equipos con
+  firmware Legacy (no UEFI); el módulo detecta y advierte este caso
+  antes de ejecutar.
 ---
 
-## Testing
+## 🧪 Testing
 Las pruebas fueron realizadas manualmente en entornos Windows 10 Pro,
 y en Windows 11 validando:
 
-- ejecución y funcionamiento de cada modúlo
-- generación de logs
+- ejecución y funcionamiento de cada módulo
+- generación de logs y reportes JSON
+- manejo de errores y degradación controlada (listados ausentes, sin
+  conectividad, fallos de cmdlets)
+- cancelación de ejecución con Ctrl+C en distintos puntos del proceso
 - análisis completo del sistema
-- reparación de red y sistema
+- reparación de red, sistema y Windows Update
 - auditoría de usuarios
 - detección de procesos y servicios
 - clasificación de riesgo en puertos y procesos
+- reinicio/apagado en sus 5 modalidades
 - estabilidad general del toolkit
 ---
 
@@ -243,7 +360,7 @@ y en Windows 11 validando:
 - Timestamp de logs migrado a PowerShell en todos los scripts afectados
 - Supresión de ruido visual en logs de chkdsk y reparaciones
 
-### Versión 2.0.0 (Actual)
+### Versión 2.0.0 (Finalizada)
 - Migración completa a PowerShell nativo (eliminación de Batch)
 - Modúlo compartido lib/Utils.ps1 con logging por niveles y colores
 - Plantilla uniforme para todos los modulos
@@ -257,7 +374,7 @@ y en Windows 11 validando:
 - Prefetch con advertencia y confirmación opcional
 - Progreso en tiempo real para SFC, DISM y chkdsk
 
-### Versión 2.1.0 (Actual)
+### Versión 2.1.0 (Finalizada)
 - Revisión completa de formato y consistencia visual de reportes
 - Incorporación de etiquetas NOTE en todos los módulos
 - Centralización de validación de conectividad mediante Test-InternetConnection()
@@ -271,24 +388,31 @@ y en Windows 11 validando:
 - Corrección de inconsistencias entre módulos
 - Mejora general de mantenibilidad y experiencia de soporte técnico
 
-### Versión 3.0.0 (Planificada)
-- reportes en JSON + HTML manteniendo los reportes actuales en .txt
-- Módulo shutdown para resetear equipo normalmente y a BIOS
-- Fix de falso positivo en unidades removibles (autodetección de unidad de origen)
-- Detección de IP APIPA (169.254.x.x)
-- Externalizar listados hardcodeados dentro de los módulos
-- Auditoria de DLLs vigentes 
-- Re-categorización de procesos "desconocidos"
-- Estandarización de manejo de errores en los módulos (incluye forzar InvariantCulture globalmente)
+### Versión 3.0.0 (Finalizada)
+- Reportes estructurados en JSON (`lib/Reporting.ps1`) manteniendo los reportes en `.txt`, con schema versionado y distinción de errores por origen (`TOOLKIT` / `SYSTEM`)
+- Cancelación global de ejecución con Ctrl+C, en cualquier punto del proceso
+- Módulo `reinicio.ps1`: reinicio normal, forzado, a BIOS/UEFI, a Opciones de Recuperación (WinRE), y apagado — todos con confirmación previa
+- Fix de falso positivo en unidades removibles (autodetección y exclusión de la unidad de origen del toolkit en `reporte_disco`)
+- Detección de IP APIPA (169.254.x.x), en el equipo local y en dispositivos escaneados
+- Estandarización de manejo de errores en los 14 módulos originales, con distinción entre fallos del toolkit y hallazgos reales del equipo
+- Forzado de `InvariantCulture` a nivel global (fix de separador decimal)
+- Externalización completa de listados hardcodeados a `lib/data/`: procesos (sistema, aplicaciones, malware), puertos (conocidos, riesgo), DLLs de Windows Update (verificadas contra documentación oficial de Microsoft), catálogo de servicios innecesarios
+- Reemplazo de Disk Cleanup automatizado por instrucciones manuales guiadas en `limpieza.ps1` (evita el problema de proceso en segundo plano no verificable)
+- Múltiples bugs corregidos en el proceso: interrupciones de flujo mal ubicadas, mensajes de log silenciosos, serialización incorrecta de arrays vacíos, falsos positivos de éxito con listados ausentes, entre otros
+
+### Versión 3.1.0 (Planificada)
+- Reportes HTML generados a partir del JSON, con resumen interpretado orientado a cliente y detalle completo orientado a técnico (no es un renderizado genérico del JSON: cada módulo define su propio criterio de síntesis)
+- Descomposición de `lib/Utils.ps1` en módulos de responsabilidad única (Config, Logging, Validation, y ErrorHandling si el patrón lo justifica)
 
 ### Versión x.x.x (Visión futura)
-- Motor de consolidación de auditorías
+- Motor de consolidación de auditorías (múltiples reportes JSON de una sesión en un informe único)
 - Informe técnico completo basado en JSON
-- Informe simplificado orientado al cliente
 - Sistema de recomendaciones automáticas
 - Evaluación integral de estado del equipo
-- Generación de informes profesionales para entrega post-servicio
-
+- Generación de informes profesionales para entrega post-servicio, con branding propio (logo, datos de contacto)
+- Recategorización de procesos y puertos desconocidos, en base a datos empíricos recolectados en ~15 equipos distintos
+- OUI lookup (identificación de fabricante por MAC), con detección previa de MAC aleatoria/administrada localmente
+- Release dedicado a seguridad del toolkit: verificación de integridad de módulos (hash/firma) y manejo de datos sensibles en reportes
 ---
 
 ## Objetivo del proyecto
@@ -311,6 +435,6 @@ con el objetivo de consolidar conocimientos en:
 
 ## Estado actual
 
-Version 2.1.0 finalizada.
+Version 3.0.0 finalizada.
 El proyecto continúa evolucionando mediante mejoras progresivas,
 refactorización y expansión de funcionalidades.
