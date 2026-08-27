@@ -1,15 +1,19 @@
 <#
 .SYNOPSIS
-    Modulo de generacion de reportes estructurados en formato JSON.
+    Modulo de generacion de reportes estructurados en formato JSON y HTML.
 .DESCRIPTION
     Provee las funciones necesarias para crear, completar y guardar
     reportes en formato JSON para cada modulo de la toolkit, siguiendo
     un schema fijo y versionado independiente del resto del proyecto.
+    Tambien provee la generacion de reportes HTML orientados a cliente
+    a partir de ese mismo reporte, con un armazon comun (header,
+    veredicto general, estilos) y contenido especifico por modulo.
     Debe importarse via dot-sourcing al inicio de cada script:
         . "$PSScriptRoot\..\lib\Reporting.ps1"
 .NOTES
-    Version : 1.0.0 (schema JSON)
-    Proyecto: Portable Windows Toolkit
+    Version JSON : 1.0.0 (schema JSON)
+    Version HTML : 1.0.0 (schema HTML)
+    Proyecto     : Portable Windows Toolkit
 #>
 
 #region CONSTANTES
