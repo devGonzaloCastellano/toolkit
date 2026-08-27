@@ -14,7 +14,7 @@
 
 #region CONSTANTES
 
-$script:ToolkitVersion = "3.0.0"
+$script:ToolkitVersion = "3.1.0"
 
 #endregion
 
@@ -22,22 +22,29 @@ $script:ToolkitVersion = "3.0.0"
 
 <#
 .SYNOPSIS
-    Genera el nombre de archivo para el reporte JSON de un modulo.
+    Genera el nombre de archivo para el reporte de un modulo.
 .DESCRIPTION
     El nombre se compone del nombre del modulo y la fecha en formato
     corto (yyMMdd), pensado para facilitar la agrupacion de reportes
     generados el mismo dia. Si ya existe un reporte con ese nombre
     (por ejecutarse el modulo mas de una vez en el mismo dia), agrega
     un sufijo numerico incremental para no sobreescribirlo.
+    Los archivos se guardan en una subcarpeta segun su extension
+    (reports/json/ o reports/html/), creandola si no existe.
 .PARAMETER ReportsDir
-    Ruta al directorio donde se guardan los reportes.
+    Ruta al directorio base donde se guardan los reportes.
 .PARAMETER ModuleName
     Nombre del modulo en ejecucion (ej: "reporte_disco").
+.PARAMETER Extension
+    Extension del archivo a generar: "json" (por defecto) o "html".
 .OUTPUTS
-    [string] Ruta completa al archivo JSON a generar.
+    [string] Ruta completa al archivo a generar.
 .EXAMPLE
     Get-ReportFileName -ReportsDir "C:\Toolkit\reports" -ModuleName "reporte_disco"
-    # C:\Toolkit\reports\reporte_disco_260710.json
+    # C:\Toolkit\reports\json\reporte_disco_260710.json
+
+    Get-ReportFileName -ReportsDir "C:\Toolkit\reports" -ModuleName "reporte_disco" -Extension "html"
+    # C:\Toolkit\reports\html\reporte_disco_260710.html
 #>
 function Get-ReportFileName {
     param(
@@ -45,20 +52,24 @@ function Get-ReportFileName {
         [string]$ReportsDir,
 
         [Parameter(Mandatory)]
-        [string]$ModuleName
+        [string]$ModuleName,
+
+        [ValidateSet("json", "html")]
+        [string]$Extension = "json"
     )
 
-    if (-not (Test-Path $ReportsDir)) {
-        New-Item -ItemType Directory -Path $ReportsDir | Out-Null
+    $subDir = Join-Path $ReportsDir $Extension
+    if (-not (Test-Path $subDir)) {
+        New-Item -ItemType Directory -Path $subDir | Out-Null
     }
 
-    $datePart = Get-Date -Format "yyMMdd"
-    $baseName = "${ModuleName}_${datePart}"
-    $reportFile = Join-Path $ReportsDir "$baseName.json"
+    $datePart  = Get-Date -Format "yyMMdd"
+    $baseName  = "${ModuleName}_${datePart}"
+    $reportFile = Join-Path $subDir "$baseName.$Extension"
 
     $counter = 2
     while (Test-Path $reportFile) {
-        $reportFile = Join-Path $ReportsDir "${baseName}_${counter}.json"
+        $reportFile = Join-Path $subDir "${baseName}_${counter}.$Extension"
         $counter++
     }
 
@@ -207,3 +218,162 @@ function Add-ReportError {
 
 #endregion
 
+#region GENERACION DE REPORTES HTML
+
+<#
+.SYNOPSIS
+    Calcula el nivel general del reporte para el veredicto visible al cliente.
+.DESCRIPTION
+    Se basa unicamente en hallazgos de origen SYSTEM (reales sobre el
+    equipo), ignorando errores TOOLKIT (fallas internas del script, que
+    no le competen al cliente). ERROR si hay al menos un hallazgo SYSTEM
+    de severidad ERROR; WARNING si hay al menos uno de severidad WARNING;
+    OK si no hay ninguno.
+.PARAMETER Report
+    Objeto de reporte generado por New-ModuleReport.
+.OUTPUTS
+    [string] "OK", "WARNING" o "ERROR".
+#>
+function Get-NivelGeneral {
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Report
+    )
+
+    $sysErrores = @($Report.errors | Where-Object { $_.source -eq "SYSTEM" -and $_.severity -eq "ERROR" })
+    if (@($sysErrores).Count -gt 0) { return "ERROR" }
+
+    $sysWarnings = @($Report.errors | Where-Object { $_.source -eq "SYSTEM" -and $_.severity -eq "WARNING" })
+    if (@($sysWarnings).Count -gt 0) { return "WARNING" }
+
+    return "OK"
+}
+
+<#
+.SYNOPSIS
+    Genera un badge HTML (etiqueta de color) para un valor puntual.
+.PARAMETER Texto
+    Texto a mostrar dentro del badge.
+.PARAMETER Nivel
+    "OK", "WARNING" o "ERROR" - determina el color.
+.OUTPUTS
+    [string] fragmento HTML del badge.
+.EXAMPLE
+    New-HtmlBadge -Texto "Activo" -Nivel WARNING
+#>
+function New-HtmlBadge {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Texto,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("OK", "WARNING", "ERROR")]
+        [string]$Nivel
+    )
+
+    $clase = switch ($Nivel) {
+        "OK"      { "badge-ok" }
+        "WARNING" { "badge-warning" }
+        "ERROR"   { "badge-error" }
+    }
+
+    return "<span class=`"badge $clase`">$Texto</span>"
+}
+
+<#
+.SYNOPSIS
+    Genera y guarda el reporte HTML de un modulo, orientado a cliente.
+.DESCRIPTION
+    Envuelve el contenido especifico del modulo (ya armado en HTML por
+    el propio modulo) con un armazon comun: header, veredicto general
+    (semaforo calculado con Get-NivelGeneral), estilos, y footer. El
+    CSS va embebido en el propio archivo para que el HTML sea portable
+    y autocontenido (util para enviar por email o abrir sin conexion).
+.PARAMETER Report
+    Objeto de reporte generado por New-ModuleReport.
+.PARAMETER ReportFile
+    Ruta completa al archivo HTML de salida.
+.PARAMETER TituloModulo
+    Nombre amigable del modulo para mostrar en el reporte (ej: "Estado del Disco").
+.PARAMETER ContentHtml
+    Fragmento de HTML con el contenido especifico del modulo, ya armado
+    por el llamador.
+.EXAMPLE
+    Save-ModuleReportHtml -Report $report -ReportFile $reportFileHtml -TituloModulo "Estado del Disco" -ContentHtml $contenido
+#>
+function Save-ModuleReportHtml {
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Report,
+
+        [Parameter(Mandatory)]
+        [string]$ReportFile,
+
+        [Parameter(Mandatory)]
+        [string]$TituloModulo,
+
+        [Parameter(Mandatory)]
+        [string]$ContentHtml
+    )
+
+    $nivelGeneral = Get-NivelGeneral -Report $Report
+
+    $colores = @{ OK = "#2e7d32"; WARNING = "#f9a825"; ERROR = "#c62828" }
+    $textos  = @{ OK = "Todo en orden"; WARNING = "Requiere atencion"; ERROR = "Accion requerida" }
+
+    $colorGeneral  = $colores[$nivelGeneral]
+    $textoGeneral  = $textos[$nivelGeneral]
+    $fecha         = Get-Date -Format "dd/MM/yyyy HH:mm"
+    $equipo        = $env:COMPUTERNAME
+
+    $html = @"
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>$TituloModulo - Reporte</title>
+<style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background:#f2f2f2; color:#222; margin:0; padding:0; }
+    .contenedor { max-width: 800px; margin: 30px auto; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+    .header { background:#1a1a2e; color:#fff; padding: 20px 24px; }
+    .header h1 { margin:0; font-size: 22px; }
+    .header .meta { font-size: 13px; color:#ccc; margin-top:6px; }
+    .veredicto { padding: 14px 24px; color:#fff; font-weight:bold; font-size:16px; background:$colorGeneral; }
+    .cuerpo { background:#fff; padding:24px; }
+    .badge { display:inline-block; padding:2px 10px; border-radius:12px; color:#fff; font-size:12px; font-weight:bold; }
+    .badge-ok { background:#2e7d32; }
+    .badge-warning { background:#f9a825; color:#222; }
+    .badge-error { background:#c62828; }
+    .metric { display:inline-block; text-align:center; padding:10px 24px 10px 0; vertical-align:top; }
+    .metric .valor { font-size:28px; font-weight:bold; }
+    .metric .label { font-size:12px; color:#666; margin-top:2px; }
+    .footer { text-align:center; font-size:11px; color:#999; padding: 16px; background:#fafafa; }
+    table { width:100%; border-collapse: collapse; margin-top:8px; }
+    th, td { text-align:left; padding:6px 8px; border-bottom:1px solid #eee; font-size:13px; }
+    h2 { font-size:15px; color:#1a1a2e; border-bottom: 2px solid #eee; padding-bottom:6px; margin-top:28px; }
+</style>
+</head>
+<body>
+<div class="contenedor">
+    <div class="header">
+        <h1>$TituloModulo</h1>
+        <div class="meta">Equipo: $equipo &nbsp;|&nbsp; Fecha: $fecha</div>
+    </div>
+    <div class="veredicto">$textoGeneral</div>
+    <div class="cuerpo">
+$ContentHtml
+    </div>
+    <div class="footer">Generado por Portable Windows Toolkit v$($Report.toolkitVersion)</div>
+</div>
+</body>
+</html>
+"@
+
+    try {
+        $html | Out-File -FilePath $ReportFile -Encoding utf8 -ErrorAction Stop
+    } catch {
+        Write-Log "No se pudo guardar el reporte HTML: $($_.Exception.Message)" -Level ERROR
+    }
+}
+
+#endregion
