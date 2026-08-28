@@ -6,7 +6,7 @@
     servicios raramente utilizados. No desactiva ni modifica nada,
     solo reporta el estado para que el tecnico tome decisiones informadas.
 .NOTES
-    Version : 3.0.0
+    Version : 3.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -188,6 +188,75 @@ try{
     $status = if (@($script:report.errors | Where-Object { $_.severity -eq "ERROR" }).Count -gt 0) { "ERROR" } else { "OK" }
     $script:report = Complete-ModuleReport -Report $script:report -Status $status
 
+    #endregion
+
+    #region REPORTE
+
+    $script:report.data = @{
+        categorias = @($Resultados | ForEach-Object {
+            @{
+                titulo = $_.Titulo
+                servicios = @($_.Servicios | Select-Object Nombre, Estado, Descripcion)
+            }
+        })
+        totalActivos = @($serviciosActivos).Count
+    }
+
+    $status = if (@($script:report.errors | Where-Object { $_.severity -eq "ERROR" }).Count -gt 0) { "ERROR" } else { "OK" }
+    $script:report = Complete-ModuleReport -Report $script:report -Status $status
+
+    #endregion
+
+    #region GENERACION HTML
+
+    $totalServiciosEvaluados = @($Resultados | ForEach-Object { $_.Servicios }).Count
+
+    $sysWarnings = @($script:report.errors | Where-Object { $_.source -eq "SYSTEM" -and $_.severity -eq "WARNING" }).Count
+    $sysErrores  = @($script:report.errors | Where-Object { $_.source -eq "SYSTEM" -and $_.severity -eq "ERROR" }).Count
+
+    $pesoWarning = 0.5
+    $pesoError   = 1.0
+
+    $healthScore = 100
+    if ($totalServiciosEvaluados -gt 0) {
+        $penalizacion = ($sysWarnings * $pesoWarning) + ($sysErrores * $pesoError)
+        $healthScore = 100 - (($penalizacion / $totalServiciosEvaluados) * 100)
+        if ($healthScore -lt 0) { $healthScore = 0 }
+        $healthScore = [math]::Round($healthScore, 1)
+    }
+
+    $script:report.healthScore = $healthScore
+
+    $nivelSalud = if ($healthScore -ge 85) { "OK" } elseif ($healthScore -ge 70) { "WARNING" } else { "ERROR" }
+
+    $filasCategoria = ""
+    foreach ($categoria in $Resultados) {
+        $activosEnCategoria = @($categoria.Servicios | Where-Object { $_.Estado -eq "Running" }).Count
+        $totalEnCategoria   = @($categoria.Servicios).Count
+        $nivelCategoria     = if ($activosEnCategoria -eq 0) { "OK" } else { "WARNING" }
+        $filasCategoria += "<tr><td>$($categoria.Titulo)</td><td>$totalEnCategoria</td><td>$(New-HtmlBadge -Texto "$activosEnCategoria activo(s)" -Nivel $nivelCategoria)</td></tr>`n"
+    }
+
+    $contentHtml = @"
+    <h2>Resumen</h2>
+    <div class="metric"><div class="valor">$healthScore%</div><div class="label">Salud de servicios</div></div>
+    <div class="metric"><div class="valor">$totalServiciosEvaluados</div><div class="label">Servicios evaluados</div></div>
+    <div class="metric"><div class="valor">$(@($serviciosActivos).Count)</div><div class="label">Activos a revisar</div></div>
+
+    <h2>Detalle por categoria</h2>
+    <table>
+        <tr><th>Categoria</th><th>Evaluados</th><th>Estado</th></tr>
+        $filasCategoria
+    </table>
+
+    <p style="font-size:12px; color:#666; margin-top:16px;">
+        Los servicios listados aqui suelen estar detenidos de forma segura en la mayoria de los equipos.
+        Si necesita mas detalle tecnico sobre cuales estan activos, consulte con su tecnico.
+    </p>
+"@
+
+    $reportFileHtml = Get-ReportFileName -ReportsDir $reportsDir -ModuleName "servicios" -Extension "html"
+    Save-ModuleReportHtml -Report $script:report -ReportFile $reportFileHtml -TituloModulo "Servicios Innecesarios" -ContentHtml $contentHtml -NivelOverride $nivelSalud
     #endregion
 
 } catch {
