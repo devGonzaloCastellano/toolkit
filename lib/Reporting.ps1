@@ -317,10 +317,14 @@ function Save-ModuleReportHtml {
         [string]$TituloModulo,
 
         [Parameter(Mandatory)]
-        [string]$ContentHtml
+        [string]$ContentHtml,
+
+        [ValidateSet("OK", "WARNING", "ERROR")]
+        [string]$NivelOverride
+
     )
 
-    $nivelGeneral = Get-NivelGeneral -Report $Report
+    $nivelGeneral = if ($NivelOverride) { $NivelOverride } else { Get-NivelGeneral -Report $Report }
 
     $colores = @{ OK = "#2e7d32"; WARNING = "#f9a825"; ERROR = "#c62828" }
     $textos  = @{ OK = "Todo en orden"; WARNING = "Requiere atencion"; ERROR = "Accion requerida" }
@@ -355,6 +359,7 @@ function Save-ModuleReportHtml {
     table { width:100%; border-collapse: collapse; margin-top:8px; }
     th, td { text-align:left; padding:6px 8px; border-bottom:1px solid #eee; font-size:13px; }
     h2 { font-size:15px; color:#1a1a2e; border-bottom: 2px solid #eee; padding-bottom:6px; margin-top:28px; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 </style>
 </head>
 <body>
