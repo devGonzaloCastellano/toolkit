@@ -360,6 +360,8 @@ function Save-ModuleReportHtml {
     th, td { text-align:left; padding:6px 8px; border-bottom:1px solid #eee; font-size:13px; }
     h2 { font-size:15px; color:#1a1a2e; border-bottom: 2px solid #eee; padding-bottom:6px; margin-top:28px; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    table { width:100%; border-collapse: collapse; margin-top:8px; table-layout: fixed; }
+    th, td { text-align:left; padding:6px 8px; border-bottom:1px solid #eee; font-size:13px; word-wrap: break-word; overflow-wrap: break-word; }
 </style>
 </head>
 <body>
