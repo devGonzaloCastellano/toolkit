@@ -6,7 +6,7 @@
     agrupando instancias multiples del mismo proceso. Abrevia rutas largas
     para mejorar la legibilidad. Incluye resumen de uso de CPU y RAM.
 .NOTES
-    Version : 3.0.0
+    Version : 3.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -279,6 +279,69 @@ try{
 
     $status = if (@($script:report.errors | Where-Object { $_.severity -eq "ERROR" }).Count -gt 0) { "ERROR" } else { "OK" }
     $script:report = Complete-ModuleReport -Report $script:report -Status $status
+
+    #endregion
+
+    #region GENERACION HTML
+
+    $procesosNoReconocidos = @($procesosAgrupados | Where-Object { $_.Categoria -in @("DES", "EXT") })
+
+    $healthScore = 100 - (@($procesosMalware).Count * 5)
+    if ($healthScore -lt 0) { $healthScore = 0 }
+
+    $script:report.healthScore = $healthScore
+
+    $nivelSalud = if (@($procesosMalware).Count -eq 0) { "OK" } else { "ERROR" }
+
+    $filasMalware = ""
+    foreach ($p in $procesosMalware) {
+        $filasMalware += "<tr><td>$($p.Nombre)</td><td>$($p.Instancias)</td></tr>`n"
+    }
+
+    $seccionMalware = if (@($procesosMalware).Count -gt 0) {
+        @"
+    <h2>Alerta de seguridad</h2>
+    <p style="font-size:13px; color:#c62828; font-weight:bold;">
+        Se detectaron procesos que coinciden con nombres de malware conocido.
+        Se recomienda contactar a su tecnico de inmediato.
+    </p>
+    <table>
+        <tr><th>Proceso</th><th>Instancias</th></tr>
+        $filasMalware
+    </table>
+"@
+    } else {
+        "<h2>Seguridad</h2><p>$(New-HtmlBadge -Texto "Sin coincidencias de malware conocido" -Nivel OK)</p>"
+    }
+
+    $filasNoReconocidos = ""
+    foreach ($p in ($procesosNoReconocidos | Select-Object -First 15)) {
+        $filasNoReconocidos += "<tr><td>$($p.Nombre)</td><td>$($p.Instancias)</td></tr>`n"
+    }
+
+    $seccionNoReconocidos = if (@($procesosNoReconocidos).Count -gt 0) {
+        @"
+    <h2>Procesos no reconocidos</h2>
+    <p style="font-size:13px;">Estos procesos no estan en nuestra base de aplicaciones conocidas.
+    En la mayoria de los casos son programas legitimos que aun no incluimos en nuestra base:</p>
+    <table>
+        <tr><th>Proceso</th><th>Instancias</th></tr>
+        $filasNoReconocidos
+    </table>
+"@
+    } else { "" }
+
+    $contentHtml = @"
+    <h2>Resumen</h2>
+    <div class="metric"><div class="valor">$cpuUso%</div><div class="label">Uso de CPU</div></div>
+    <div class="metric"><div class="valor">$ramPct%</div><div class="label">Uso de RAM</div></div>
+    <div class="metric"><div class="valor">$(@($procesosMalware).Count)</div><div class="label">Alertas de seguridad</div></div>
+    $seccionMalware
+    $seccionNoReconocidos
+"@
+
+    $reportFileHtml = Get-ReportFileName -ReportsDir $reportsDir -ModuleName "procesos" -Extension "html"
+    Save-ModuleReportHtml -Report $script:report -ReportFile $reportFileHtml -TituloModulo "Procesos en Ejecucion" -ContentHtml $contentHtml -NivelOverride $nivelSalud
 
     #endregion
 
