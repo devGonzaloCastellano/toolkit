@@ -7,7 +7,7 @@
     el proceso asociado y el origen/destino de la conexion.
     Ayuda a identificar conexiones sospechosas o inesperadas.
 .NOTES
-    Version : 3.0.0
+    Version : 3.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -372,6 +372,68 @@ try{
 
     $status = if (@($script:report.errors | Where-Object { $_.severity -eq "ERROR" }).Count -gt 0) { "ERROR" } else { "OK" }
     $script:report = Complete-ModuleReport -Report $script:report -Status $status
+
+    #endregion
+
+    #region GENERACION HTML
+
+    $healthScore = 100 - (@($hallazgosRiesgo).Count * 10)
+    if ($healthScore -lt 0) { $healthScore = 0 }
+
+    $script:report.healthScore = $healthScore
+
+    $nivelSalud = if (@($hallazgosRiesgo).Count -eq 0) { "OK" } else { "ERROR" }
+
+    $filasRiesgo = ""
+    foreach ($h in $hallazgosRiesgo) {
+        $ref = if ($h.PSObject.Properties.Name -contains "Puerto") { "Puerto $($h.Puerto)" } else { $h.RemoteEndpoint }
+        $filasRiesgo += "<tr><td>$ref</td><td>$($h.Proceso)</td><td>$($h.Descripcion)</td></tr>`n"
+    }
+
+    $seccionRiesgo = if (@($hallazgosRiesgo).Count -gt 0) {
+        @"
+    <h2>Alerta de seguridad</h2>
+    <p style="font-size:13px; color:#c62828; font-weight:bold;">
+        Se detectaron puertos o conexiones asociados a herramientas de intrusion conocidas.
+        Se recomienda contactar a su tecnico de inmediato.
+    </p>
+    <table>
+        <tr><th>Puerto/Conexion</th><th>Proceso</th><th>Detalle</th></tr>
+        $filasRiesgo
+    </table>
+"@
+    } else {
+        "<h2>Seguridad</h2><p>$(New-HtmlBadge -Texto "Sin puertos de riesgo detectados" -Nivel OK)</p>"
+    }
+
+    $filasSospechosas = ""
+    foreach ($h in ($hallazgosWarning | Select-Object -First 15)) {
+        $filasSospechosas += "<tr><td>$($h.RemoteEndpoint)</td><td>$($h.Proceso)</td></tr>`n"
+    }
+
+    $seccionSospechosas = if (@($hallazgosWarning).Count -gt 0) {
+        @"
+    <h2>Conexiones a revisar</h2>
+    <p style="font-size:13px;">Estas conexiones externas no estan asociadas a un proceso en nuestra
+    base de aplicaciones conocidas. En la mayoria de los casos son programas legitimos que aun
+    no incluimos en nuestra base:</p>
+    <table>
+        <tr><th>Destino</th><th>Proceso</th></tr>
+        $filasSospechosas
+    </table>
+"@
+    } else { "" }
+
+    $contentHtml = @"
+    <h2>Resumen</h2>
+    <div class="metric"><div class="valor">$(@($conexionesTCP).Count)</div><div class="label">Conexiones activas</div></div>
+    <div class="metric"><div class="valor">$(@($hallazgosRiesgo).Count)</div><div class="label">Alertas de seguridad</div></div>
+    $seccionRiesgo
+    $seccionSospechosas
+"@
+
+    $reportFileHtml = Get-ReportFileName -ReportsDir $reportsDir -ModuleName "puertos" -Extension "html"
+    Save-ModuleReportHtml -Report $script:report -ReportFile $reportFileHtml -TituloModulo "Puertos y Conexiones" -ContentHtml $contentHtml -NivelOverride $nivelSalud
 
     #endregion
 
