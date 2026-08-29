@@ -7,7 +7,7 @@
     de inicio del usuario y del sistema, y el Programador de Tareas.
     No desactiva ni modifica nada, solo reporta para auditoria.
 .NOTES
-    Version : 3.0.0
+    Version : 3.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -209,6 +209,8 @@ function Get-CommandDisplay {
 try {
 
     #region RECOLECCION DE DATOS
+    $ProcesosSistema      = @(Import-DataList -FileName "procesos_sistema.json")
+    $ProcesosAplicaciones = @(Import-DataList -FileName "procesos_aplicaciones.json")
 
     $startupHKCU      = @(Get-RegistryStartup "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run")
     $startupHKLM      = @(Get-RegistryStartup "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run")
@@ -332,6 +334,61 @@ try {
 
     $status = if (@($script:report.errors).Count -gt 0) { "ERROR" } else { "OK" }
     $script:report = Complete-ModuleReport -Report $script:report -Status $status
+
+    #endregion
+
+    #region GENERACION HTML
+
+    # Total = registro (HKCU+HKLM) + carpetas de inicio + tareas EN EJECUCION.
+    # No se cuentan las tareas "Ready" porque no arrancan con Windows.
+    $totalInicio = $totalHKCU + $totalHKLM + $totalUserDir + $totalSysDir + $totalRunning
+
+    # Umbrales provisorios (v3.1.0), basados en una muestra inicial de 4 equipos.
+    # A ajustar cuando se acumulen mas datos reales (objetivo: ~15 equipos).
+    $nivelCantidad = if ($totalInicio -le 15) { "OK" }
+    elseif ($totalInicio -le 25) { "WARNING" }
+    else { "ERROR" }
+
+    $textoCantidad = switch ($nivelCantidad) {
+        "OK"      { "Cantidad normal" }
+        "WARNING" { "Cantidad elevada, puede afectar el tiempo de arranque" }
+        "ERROR"   { "Cantidad alta, se recomienda revisar y desactivar innecesarios" }
+    }
+
+    # Cruce contra listados conocidos para marcar reconocido/no reconocido
+    $todasLasEntradas = @($startupHKCU) + @($startupHKLM) + @($startupUserDir) + @($startupSysDir)
+    $entradasNoReconocidas = @($todasLasEntradas | Where-Object {
+        $nombreExe = ($_.Comando -replace '.*\\', '' -replace '["'']', '').Split(' ')[0] -replace '\.exe$', ''
+        ($ProcesosSistema -notcontains $nombreExe) -and ($ProcesosAplicaciones -notcontains $nombreExe)
+    })
+
+    $filasNoReconocidas = ""
+    foreach ($entrada in $entradasNoReconocidas) {
+        $filasNoReconocidas += "<tr><td>$($entrada.Nombre)</td><td>$($entrada.Comando)</td></tr>`n"
+    }
+
+    $seccionNoReconocidas = if (@($entradasNoReconocidas).Count -gt 0) {
+        @"
+    <h2>Entradas no reconocidas</h2>
+    <p style="font-size:13px;">Estas entradas no estan en nuestra base de aplicaciones conocidas.
+    No es necesariamente un problema, pero vale la pena confirmar que las reconoce:</p>
+    <table>
+        <tr><th>Nombre</th><th>Programa</th></tr>
+        $filasNoReconocidas
+    </table>
+"@
+    } else { "" }
+
+    $contentHtml = @"
+    <h2>Resumen</h2>
+    <div class="metric"><div class="valor">$totalInicio</div><div class="label">Total al inicio</div></div>
+    <div class="metric"><div class="valor">$(@($entradasNoReconocidas).Count)</div><div class="label">No reconocidas</div></div>
+    <p>$(New-HtmlBadge -Texto $textoCantidad -Nivel $nivelCantidad)</p>
+    $seccionNoReconocidas
+"@
+
+    $reportFileHtml = Get-ReportFileName -ReportsDir $reportsDir -ModuleName "startup" -Extension "html"
+    Save-ModuleReportHtml -Report $script:report -ReportFile $reportFileHtml -TituloModulo "Programas al Inicio" -ContentHtml $contentHtml -NivelOverride $nivelCantidad
 
     #endregion
 
