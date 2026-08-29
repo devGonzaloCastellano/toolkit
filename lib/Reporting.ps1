@@ -356,13 +356,11 @@ function Save-ModuleReportHtml {
     .metric .valor { font-size:28px; font-weight:bold; }
     .metric .label { font-size:12px; color:#666; margin-top:2px; }
     .footer { text-align:center; font-size:11px; color:#999; padding: 16px; background:#fafafa; }
-    table { width:100%; border-collapse: collapse; margin-top:8px; }
-    th, td { text-align:left; padding:6px 8px; border-bottom:1px solid #eee; font-size:13px; }
-    h2 { font-size:15px; color:#1a1a2e; border-bottom: 2px solid #eee; padding-bottom:6px; margin-top:28px; }
-    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     table { width:100%; border-collapse: collapse; margin-top:8px; table-layout: fixed; }
     th, td { text-align:left; padding:6px 8px; border-bottom:1px solid #eee; font-size:13px; word-wrap: break-word; overflow-wrap: break-word; }
-</style>
+    h2 { font-size:15px; color:#1a1a2e; border-bottom: 2px solid #eee; padding-bottom:6px; margin-top:28px; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    </style>
 </head>
 <body>
 <div class="contenedor">
