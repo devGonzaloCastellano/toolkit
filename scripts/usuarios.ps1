@@ -6,7 +6,7 @@
     de invitado, sesiones activas y los ultimos inicios de sesion
     registrados en el log de eventos de seguridad de Windows.
 .NOTES
-    Version : 3.0.0
+    Version : 3.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -309,6 +309,48 @@ try{
 
     $status = if (@($script:report.errors | Where-Object { $_.severity -eq "ERROR" }).Count -gt 0) { "ERROR" } else { "OK" }
     $script:report = Complete-ModuleReport -Report $script:report -Status $status
+
+    #endregion
+
+    #region GENERACION HTML
+
+    $invitadoHabilitado = $invitado -and $invitado.Enabled
+    $adminGroup = $grupos | Where-Object { $_.Grupo -eq "Administradores" }
+    $adminMiembros = if ($adminGroup) { $adminGroup.Miembros } else { "-" }
+
+    $healthScore = 100
+    if ($invitadoHabilitado) { $healthScore -= 50 }
+    if ($healthScore -lt 0) { $healthScore = 0 }
+
+    $script:report.healthScore = $healthScore
+    $nivelSalud = if ($invitadoHabilitado) { "ERROR" } else { "OK" }
+
+    $seccionInvitado = if ($invitadoHabilitado) {
+        @"
+    <h2>Alerta de seguridad</h2>
+    <p style="font-size:13px; color:#c62828; font-weight:bold;">
+        La cuenta de invitado esta habilitada. Esto permite el acceso al equipo sin
+        contraseña. Se recomienda deshabilitarla salvo que sea un uso intencional.
+    </p>
+"@
+    } else {
+        "<h2>Seguridad</h2><p>$(New-HtmlBadge -Texto "Cuenta de invitado deshabilitada" -Nivel OK)</p>"
+    }
+
+    $contentHtml = @"
+    <h2>Resumen</h2>
+    <div class="metric"><div class="valor">$(@($cuentasActivas).Count)</div><div class="label">Cuentas activas</div></div>
+    <div class="metric"><div class="valor">$(@($sesionesParsed).Count)</div><div class="label">Sesiones activas</div></div>
+    $seccionInvitado
+
+    <h2>Administradores del equipo</h2>
+    <p style="font-size:13px;">Las siguientes cuentas tienen permisos de administrador. Verifique
+    que reconoce a todas:</p>
+    <p>$adminMiembros</p>
+"@
+
+    $reportFileHtml = Get-ReportFileName -ReportsDir $reportsDir -ModuleName "usuarios" -Extension "html"
+    Save-ModuleReportHtml -Report $script:report -ReportFile $reportFileHtml -TituloModulo "Usuarios del Equipo" -ContentHtml $contentHtml -NivelOverride $nivelSalud
 
     #endregion
 
