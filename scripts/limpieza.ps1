@@ -7,7 +7,7 @@
     vacia la papelera y ejecuta Disk Cleanup. Muestra conteo de archivos
     eliminados, espacio liberado y duracion del proceso.
 .NOTES
-    Version : 3.0.0
+    Version : 3.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -268,6 +268,27 @@ try{
 
     $status = if (@($script:report.errors | Where-Object { $_.severity -eq "ERROR" }).Count -gt 0) { "ERROR" } else { "OK" }
     $script:report = Complete-ModuleReport -Report $script:report -Status $status
+
+    #endregion
+
+    #region GENERACION HTML
+
+    $nivelResultado = if (@($script:report.errors | Where-Object { $_.severity -eq "ERROR" }).Count -gt 0) { "WARNING" } else { "OK" }
+
+    $contentHtml = @"
+    <h2>Resultado de la limpieza</h2>
+    <div class="metric"><div class="valor">$totalItems</div><div class="label">Archivos eliminados</div></div>
+    <div class="metric"><div class="valor">$espacioStr</div><div class="label">Espacio liberado</div></div>
+    <div class="metric"><div class="valor">$totalOmitidos</div><div class="label">En uso (no eliminados)</div></div>
+
+    <p style="font-size:13px; color:#666; margin-top:16px;">
+        Los archivos "en uso" corresponden a temporales bloqueados por programas activos
+        en el momento de la limpieza. No representan un problema.
+    </p>
+"@
+
+    $reportFileHtml = Get-ReportFileName -ReportsDir $reportsDir -ModuleName "limpieza" -Extension "html"
+    Save-ModuleReportHtml -Report $script:report -ReportFile $reportFileHtml -TituloModulo "Limpieza del Sistema" -ContentHtml $contentHtml -NivelOverride $nivelResultado
 
     #endregion
 
