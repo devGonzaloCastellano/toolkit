@@ -9,7 +9,7 @@
     Nota: SFC y DISM muestran su progreso directamente en consola en tiempo
     real. El detalle completo queda en sus logs nativos de Windows.
 .NOTES
-    Version : 3.0.0
+    Version : 3.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -194,6 +194,46 @@ try{
 
     $status = if (@($script:report.errors | Where-Object { $_.severity -eq "ERROR" }).Count -gt 0) { "ERROR" } else { "OK" }
     $script:report = Complete-ModuleReport -Report $script:report -Status $status
+
+    #endregion
+
+    #region GENERACION HTML
+
+    $sfcOk  = $sfcExit -eq 0
+    $dismOk = $dismExit -eq 0
+
+    # WARNING si SFC reparo algo (codigo 1) o si algo termino en un codigo no esperado
+    $nivelResultado = if ($sfcExit -eq 0 -and $dismExit -eq 0) { "OK" } else { "WARNING" }
+
+    $textoSfc = switch ($sfcExit) {
+        0 { "Sin errores encontrados" }
+        1 { "Se encontraron y repararon errores" }
+        default { "Requiere revision (codigo $sfcExit)" }
+    }
+    $nivelSfc = switch ($sfcExit) {
+        0 { "OK" }
+        1 { "WARNING" }
+        default { "WARNING" }
+    }
+
+    $textoDism = if ($dismExit -eq 0) { "Imagen de Windows reparada correctamente" } else { "Requiere revision, reiniciar y reintentar (codigo $dismExit)" }
+    $nivelDism = if ($dismExit -eq 0) { "OK" } else { "WARNING" }
+
+    $contentHtml = @"
+    <h2>Resultado de la reparacion</h2>
+    <table>
+        <tr><th>Herramienta</th><th>Resultado</th><th>Duracion</th></tr>
+        <tr><td>SFC (archivos de sistema)</td><td>$(New-HtmlBadge -Texto $textoSfc -Nivel $nivelSfc)</td><td>$sfcDuracion min</td></tr>
+        <tr><td>DISM (imagen de Windows)</td><td>$(New-HtmlBadge -Texto $textoDism -Nivel $nivelDism)</td><td>$dismDuracion min</td></tr>
+    </table>
+
+    <p style="font-size:13px; color:#666; margin-top:16px;">
+        Se recomienda reiniciar el equipo para que los cambios se apliquen correctamente.
+    </p>
+"@
+
+    $reportFileHtml = Get-ReportFileName -ReportsDir $reportsDir -ModuleName "reparar_sistema" -Extension "html"
+    Save-ModuleReportHtml -Report $script:report -ReportFile $reportFileHtml -TituloModulo "Reparacion del Sistema" -ContentHtml $contentHtml -NivelOverride $nivelResultado
 
     #endregion
 
