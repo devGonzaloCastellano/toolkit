@@ -8,7 +8,7 @@
     particiones, red, servicios criticos y usuario actual.
     Finaliza con un diagnostico general del estado del equipo.
 .NOTES
-    Version : 3.0.0
+    Version : 3.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -166,6 +166,34 @@ function Get-Particiones {
         Write-Log "No se pudieron obtener las particiones: $($_.Exception.Message)" -Level ERROR -LogFile $LogFile
         Add-ReportError -Report $script:report -Message "Fallo al obtener particiones: $($_.Exception.Message)" -Severity ERROR -Source TOOLKIT
         return @()
+    }
+}
+
+<#
+.SYNOPSIS
+    Determina si una unidad logica es un dispositivo removible.
+.DESCRIPTION
+    Consulta el tipo de unidad via CIM para distinguir un pendrive/disco
+    externo (DriveType 2) de un disco fijo interno (DriveType 3). Se usa
+    para decidir si corresponde omitir el chequeo de chkdsk sobre la
+    unidad de origen del toolkit: solo tiene sentido omitirla si es
+    removible (para evitar el falso positivo de "en uso"), no si el
+    toolkit corre desde un disco interno del propio equipo.
+.PARAMETER Unidad
+    Letra de unidad sin los dos puntos (ej: "E", no "E:").
+.OUTPUTS
+    [bool] $true si la unidad es removible, $false si es fija o si no
+    se pudo determinar.
+.EXAMPLE
+    Test-EsUnidadRemovible -Unidad "E"
+#>
+function Test-EsUnidadRemovible {
+    param([string]$Unidad)
+    try {
+        $disco = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='${Unidad}:'" -ErrorAction Stop
+        return $disco.DriveType -eq 2
+    } catch {
+        return $false
     }
 }
 
@@ -564,6 +592,135 @@ try{
 
     $status = if (@($script:report.errors | Where-Object { $_.severity -eq "ERROR" }).Count -gt 0) { "ERROR" } else { "OK" }
     $script:report = Complete-ModuleReport -Report $script:report -Status $status
+
+    #endregion
+
+    #region GENERACION HTML
+
+    function Get-PenalizacionEscalonada {
+        param([double]$Pct)
+        if ($Pct -ge 95) { return 20 }
+        if ($Pct -ge 90) { return 10 }
+        if ($Pct -ge 75) { return 5 }
+        return 0
+    }
+
+    $penalizacionRam = Get-PenalizacionEscalonada -Pct $ramPct
+    $penalizacionCpu = Get-PenalizacionEscalonada -Pct $cpuUso
+
+    $discosNoSaludables = @($discosResumen | Where-Object { $_.SmartEstado -ne "OK" })
+    $serviciosDetenidos = @($estadosServicios | Where-Object { $_.Estado -ne "Running" })
+
+    $currentDrive = $null
+    $currentDriveEsRemovible = $false
+    try {
+        $currentDrive = (Get-Item $PSScriptRoot).PSDrive.Name
+        $currentDriveEsRemovible = Test-EsUnidadRemovible -Unidad $currentDrive
+    } catch { }
+
+    $particionesCliente = @($particiones | Where-Object {
+        -not ($_.Unidad -eq $currentDrive -and $currentDriveEsRemovible)
+    })
+
+    $penalizacionParticiones = 0
+    foreach ($p in $particionesCliente) {
+        $usadoGB = $p.TotalGB - $p.LibreGB
+        $pctUso  = if ($p.TotalGB -gt 0) { ($usadoGB / $p.TotalGB) * 100 } else { 0 }
+        $penalizacionParticiones += Get-PenalizacionEscalonada -Pct $pctUso
+    }
+
+    $sinRed = -not $adaptadorRed
+
+    $penalizacionTotal = $penalizacionRam + $penalizacionCpu + $penalizacionParticiones `
+    + (@($discosNoSaludables).Count * 25) `
+    + (@($serviciosDetenidos).Count * 15) `
+    + $(if ($sinRed) { 5 } else { 0 })
+
+    $healthScore = 100 - $penalizacionTotal
+    if ($healthScore -lt 0) { $healthScore = 0 }
+
+    $script:report.healthScore = $healthScore
+
+    $nivelResultado = if (@($discosNoSaludables).Count -gt 0) { "ERROR" }
+    elseif ($healthScore -lt 70) { "ERROR" }
+    elseif ($healthScore -lt 90) { "WARNING" }
+    else { "OK" }
+
+    # -- Recursos --
+    $nivelRam = if ($ramPct -ge 95) { "ERROR" } elseif ($ramPct -ge 75) { "WARNING" } else { "OK" }
+    $nivelCpu = if ($cpuUso -ge 95) { "ERROR" } elseif ($cpuUso -ge 75) { "WARNING" } else { "OK" }
+
+    # -- Almacenamiento --
+    $filasDiscos = ""
+    foreach ($d in $discosResumen) {
+        $nivel = if ($d.SmartEstado -eq "OK") { "OK" } else { "ERROR" }
+        $filasDiscos += "<tr><td>$($d.Modelo)</td><td>$($d.CapacidadGB) GB</td><td>$(New-HtmlBadge -Texto $d.SmartEstado -Nivel $nivel)</td></tr>`n"
+    }
+
+    $filasParticiones = ""
+    foreach ($p in $particionesCliente) {
+        $usadoGB = [math]::Round($p.TotalGB - $p.LibreGB, 1)
+        $pctUso  = if ($p.TotalGB -gt 0) { [math]::Round(($usadoGB / $p.TotalGB) * 100) } else { 0 }
+        $nivel   = if ($pctUso -ge 95) { "ERROR" } elseif ($pctUso -ge 75) { "WARNING" } else { "OK" }
+        $filasParticiones += "<tr><td>Unidad $($p.Unidad)</td><td>$($p.LibreGB) GB libres de $($p.TotalGB) GB</td><td>$(New-HtmlBadge -Texto "$pctUso% usado" -Nivel $nivel)</td></tr>`n"
+    }
+
+    # -- Seguridad --
+    $filasServicios = ""
+    foreach ($s in $estadosServicios) {
+        $nivel = if ($s.Estado -eq "Running") { "OK" } else { "WARNING" }
+        $texto = if ($s.Estado -eq "Running") { "Activo" } else { "Detenido" }
+        $filasServicios += "<tr><td>$($s.Display)</td><td>$(New-HtmlBadge -Texto $texto -Nivel $nivel)</td></tr>`n"
+    }
+
+    # -- Red --
+    $textoRed = if ($adaptadorRed) { "Conexion activa" } else { "Sin adaptador de red activo" }
+    $nivelRed = if ($adaptadorRed) { "OK" } else { "WARNING" }
+
+    $contentHtml = @"
+    <h2>Resumen general</h2>
+    <div class="metric"><div class="valor">$healthScore%</div><div class="label">Salud general del equipo</div></div>
+    <div class="metric"><div class="valor">$uptimeStr</div><div class="label">Tiempo encendido</div></div>
+
+    <h2>Recursos</h2>
+    <table>
+        <tr><th>Recurso</th><th>Uso</th></tr>
+        <tr><td>Procesador</td><td>$(New-HtmlBadge -Texto "$cpuUso%" -Nivel $nivelCpu)</td></tr>
+        <tr><td>Memoria RAM</td><td>$(New-HtmlBadge -Texto "$ramPct%" -Nivel $nivelRam)</td></tr>
+    </table>
+
+    <h2>Almacenamiento</h2>
+    <table>
+        <tr><th>Disco</th><th>Capacidad</th><th>Estado</th></tr>
+        $filasDiscos
+    </table>
+    <table>
+        <tr><th>Unidad</th><th>Espacio</th><th>Uso</th></tr>
+        $filasParticiones
+    </table>
+
+    <h2>Seguridad</h2>
+    <table>
+        <tr><th>Servicio</th><th>Estado</th></tr>
+        $filasServicios
+    </table>
+
+    <h2>Red</h2>
+    <p>$(New-HtmlBadge -Texto $textoRed -Nivel $nivelRed)</p>
+
+     <h2>Ficha tecnica del equipo</h2>
+    <table>
+        <tr><td>Sistema operativo</td><td>$($os.Caption) ($($os.OSArchitecture))</td></tr>
+        <tr><td>Placa madre</td><td>$($mb.Manufacturer) $($mb.Product)</td></tr>
+        <tr><td>BIOS</td><td>$($bios.SMBIOSBIOSVersion)</td></tr>
+        <tr><td>Procesador</td><td>$($cpu.Name)</td></tr>
+        <tr><td>Memoria RAM</td><td>$ramFisicaGB GB</td></tr>
+        <tr><td>Placa de video</td><td>$($gpu.Name)</td></tr>
+    </table>
+"@
+
+    $reportFileHtml = Get-ReportFileName -ReportsDir $reportsDir -ModuleName "info_sistema" -Extension "html"
+    Save-ModuleReportHtml -Report $script:report -ReportFile $reportFileHtml -TituloModulo "Diagnostico General" -ContentHtml $contentHtml -NivelOverride $nivelResultado
 
     #endregion
 
