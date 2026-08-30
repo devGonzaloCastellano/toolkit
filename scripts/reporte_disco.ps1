@@ -103,7 +103,7 @@ function Get-UnidadesLogicas {
 
 <#
 .SYNOPSIS
-    Calcula el tamanio de una carpeta mostrando progreso en tiempo real.
+    Calcula el volumen de una carpeta mostrando progreso en tiempo real.
 .PARAMETER Carpeta
     DirectoryInfo de la carpeta a medir.
 .OUTPUTS
@@ -122,6 +122,34 @@ function Get-TamanoCarpeta {
     }
 }
 
+<#
+.SYNOPSIS
+    Determina si una unidad logica es un dispositivo removible.
+.DESCRIPTION
+    Consulta el tipo de unidad via CIM para distinguir un pendrive/disco
+    externo (DriveType 2) de un disco fijo interno (DriveType 3). Se usa
+    para decidir si corresponde omitir el chequeo de chkdsk sobre la
+    unidad de origen del toolkit: solo tiene sentido omitirla si es
+    removible (para evitar el falso positivo de "en uso"), no si el
+    toolkit corre desde un disco interno del propio equipo.
+.PARAMETER Unidad
+    Letra de unidad sin los dos puntos (ej: "E", no "E:").
+.OUTPUTS
+    [bool] $true si la unidad es removible, $false si es fija o si no
+    se pudo determinar.
+.EXAMPLE
+    Test-EsUnidadRemovible -Unidad "E"
+#>
+function Test-EsUnidadRemovible {
+    param([string]$Unidad)
+    try {
+        $disco = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='${Unidad}:'" -ErrorAction Stop
+        return $disco.DriveType -eq 2
+    } catch {
+        return $false
+    }
+}
+
 #endregion
 
 try{
@@ -131,6 +159,7 @@ try{
     $particiones   = Get-Particiones
     $unidades      = Get-UnidadesLogicas
     $currentDrive = (Get-Item $PSScriptRoot).PSDrive.Name
+    $currentDriveEsRemovible = Test-EsUnidadRemovible -Unidad $currentDrive
 
     #endregion
 
@@ -152,7 +181,7 @@ try{
     $resultadosChkdsk = @()
     foreach ($unidad in $unidades) {
 
-        if($unidad -eq $currentDrive){
+        if($unidad -eq $currentDrive -and $currentDriveEsRemovible){
             Write-Log "--- Unidad $unidad : ---" -Level NOTE -LogFile $LogFile
             Write-Log "Es la unidad de origen del toolkit, se omite el chequeo para evitar falso positivo." -Level NOTE -LogFile $LogFile
             Write-Blank -LogFile $LogFile
@@ -272,8 +301,9 @@ try{
     #region GENERACION HTML
 
     $chkdskCliente     = @($resultadosChkdsk | Where-Object { $_.Estado -ne "OMITIDA" })
-    $particionesCliente = @($particiones | Where-Object { $_.Unidad.TrimEnd(':') -ne $currentDrive })
-
+    $particionesCliente = @($particiones | Where-Object {
+        -not ($_.Unidad.TrimEnd(':') -eq $currentDrive -and $currentDriveEsRemovible)
+    })
     $unidadesConProblema = @($chkdskCliente | Where-Object { $_.Estado -ne "SIN_ERRORES" })
     $particionesLlenas    = @($particionesCliente | Where-Object {
         $usadoGB = $_.TotalGB - $_.LibreGB
