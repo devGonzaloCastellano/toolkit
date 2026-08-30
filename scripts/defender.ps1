@@ -6,7 +6,7 @@
     de firmas de antivirus y antispyware, y opcionalmente ejecuta un escaneo
     rapido del sistema detectando amenazas activas.
 .NOTES
-    Version : 3.0.0
+    Version : 3.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -273,6 +273,54 @@ try{
 
     $status = if (@($script:report.errors | Where-Object { $_.severity -eq "ERROR" }).Count -gt 0) { "ERROR" } else { "OK" }
     $script:report = Complete-ModuleReport -Report $script:report -Status $status
+
+    #endregion
+
+    #region GENERACION HTML
+
+    $hayAmenazas = @($amenazas).Count -gt 0
+    $proteccionActiva = $statusPostResumen -and $statusPostResumen.realTimeProtection -and $statusPostResumen.antivirusEnabled
+
+    $nivelResultado = if ($hayAmenazas) { "ERROR" }
+    elseif (-not $proteccionActiva) { "WARNING" }
+    else { "OK" }
+
+    $textoProteccion = if ($proteccionActiva) { "Proteccion activa" } else { "Proteccion desactivada" }
+    $nivelProteccion  = if ($proteccionActiva) { "OK" } else { "WARNING" }
+
+    $textoFirmas = if ($actualizacionOk) { "Firmas actualizadas" } else { "No se pudieron actualizar las firmas" }
+    $nivelFirmas  = if ($actualizacionOk) { "OK" } else { "WARNING" }
+
+    $seccionAmenazas = if ($hayAmenazas) {
+        $filas = ""
+        foreach ($a in $amenazas) {
+            $filas += "<tr><td>$($a.ThreatName)</td></tr>`n"
+        }
+        @"
+    <h2>Alerta de seguridad</h2>
+    <p style="font-size:13px; color:#c62828; font-weight:bold;">
+        Se detectaron amenazas activas en el equipo. Se recomienda contactar a su tecnico de inmediato.
+    </p>
+    <table>
+        <tr><th>Amenaza</th></tr>
+        $filas
+    </table>
+"@
+    } else {
+        "<h2>Seguridad</h2><p>$(New-HtmlBadge -Texto "Sin amenazas detectadas" -Nivel OK)</p>"
+    }
+
+    $textoEscaneo = if ($escaneoEjecutado) { "Escaneo rapido ejecutado" } else { "Escaneo no ejecutado en esta sesion" }
+
+    $contentHtml = @"
+    <h2>Estado de Windows Defender</h2>
+    <p>$(New-HtmlBadge -Texto $textoProteccion -Nivel $nivelProteccion) $(New-HtmlBadge -Texto $textoFirmas -Nivel $nivelFirmas)</p>
+    <p style="font-size:13px; color:#666;">$textoEscaneo</p>
+    $seccionAmenazas
+"@
+
+    $reportFileHtml = Get-ReportFileName -ReportsDir $reportsDir -ModuleName "defender" -Extension "html"
+    Save-ModuleReportHtml -Report $script:report -ReportFile $reportFileHtml -TituloModulo "Windows Defender" -ContentHtml $contentHtml -NivelOverride $nivelResultado
 
     #endregion
 
