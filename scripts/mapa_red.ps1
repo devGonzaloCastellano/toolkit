@@ -361,9 +361,8 @@ try{
 
     $reportFileHtml = Get-ReportFileName -ReportsDir $reportsDir -ModuleName "mapa_red" -Extension "html"
     Save-ModuleReportHtml -Report $script:report -ReportFile $reportFileHtml -TituloModulo "Mapa de Red" -ContentHtml $contentHtml -NivelOverride $nivelResultado
-
     #endregion
-    
+
 } catch {
     Write-Log "Error fatal en el modulo: $($_.Exception.Message)" -Level ERROR -LogFile $LogFile
     Add-ReportError -Report $script:report -Message $_.Exception.Message -Severity ERROR -Source TOOLKIT
