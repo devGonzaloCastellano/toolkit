@@ -6,7 +6,7 @@
     lista las carpetas mas pesadas en C:\ para identificar consumo de espacio.
     El progreso de chkdsk se muestra en tiempo real.
 .NOTES
-    Version : 3.0.0
+    Version : 3.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -266,6 +266,67 @@ try{
 
     $status = if (@($script:report.errors | Where-Object { $_.severity -eq "ERROR" }).Count -gt 0) { "ERROR" } else { "OK" }
     $script:report = Complete-ModuleReport -Report $script:report -Status $status
+
+    #endregion
+
+    #region GENERACION HTML
+
+    $chkdskCliente     = @($resultadosChkdsk | Where-Object { $_.Estado -ne "OMITIDA" })
+    $particionesCliente = @($particiones | Where-Object { $_.Unidad.TrimEnd(':') -ne $currentDrive })
+
+    $unidadesConProblema = @($chkdskCliente | Where-Object { $_.Estado -ne "SIN_ERRORES" })
+    $particionesLlenas    = @($particionesCliente | Where-Object {
+        $usadoGB = $_.TotalGB - $_.LibreGB
+        $pctUso = if ($_.TotalGB -gt 0) { ($usadoGB / $_.TotalGB) * 100 } else { 0 }
+        $pctUso -ge 90
+    })
+
+    $totalUnidades = @($chkdskCliente).Count
+    $penalizacion = (@($unidadesConProblema).Count * 15) + (@($particionesLlenas).Count * 10)
+    $healthScore = 100 - $penalizacion
+    if ($healthScore -lt 0) { $healthScore = 0 }
+
+    $script:report.healthScore = $healthScore
+
+    $nivelResultado = if (@($unidadesConProblema).Count -gt 0) { "ERROR" }
+    elseif (@($particionesLlenas).Count -gt 0) { "WARNING" }
+    else { "OK" }
+
+    $filasChkdsk = ""
+    foreach ($r in $chkdskCliente) {
+        $nivel = if ($r.Estado -eq "SIN_ERRORES") { "OK" } else { "ERROR" }
+        $texto = if ($r.Estado -eq "SIN_ERRORES") { "Sin errores" } else { "Requiere revision" }
+        $filasChkdsk += "<tr><td>Unidad $($r.Unidad)</td><td>$(New-HtmlBadge -Texto $texto -Nivel $nivel)</td></tr>`n"
+    }
+
+    $filasParticiones = ""
+    foreach ($p in $particionesCliente) {
+        $usadoGB = [math]::Round($p.TotalGB - $p.LibreGB, 1)
+        $pctUso  = if ($p.TotalGB -gt 0) { [math]::Round(($usadoGB / $p.TotalGB) * 100) } else { 0 }
+        $nivel   = if ($pctUso -ge 90) { "ERROR" } elseif ($pctUso -ge 75) { "WARNING" } else { "OK" }
+        $filasParticiones += "<tr><td>Unidad $($p.Unidad)</td><td>$($p.LibreGB) GB libres de $($p.TotalGB) GB</td><td>$(New-HtmlBadge -Texto "$pctUso% usado" -Nivel $nivel)</td></tr>`n"
+    }
+
+    $contentHtml = @"
+    <h2>Resumen</h2>
+    <div class="metric"><div class="valor">$healthScore%</div><div class="label">Salud del disco</div></div>
+    <div class="metric"><div class="valor">$totalUnidades</div><div class="label">Unidades evaluadas</div></div>
+
+    <h2>Estado de las unidades</h2>
+    <table>
+        <tr><th>Unidad</th><th>Estado</th></tr>
+        $filasChkdsk
+    </table>
+
+    <h2>Espacio disponible</h2>
+    <table>
+        <tr><th>Unidad</th><th>Espacio</th><th>Uso</th></tr>
+        $filasParticiones
+    </table>
+"@
+
+    $reportFileHtml = Get-ReportFileName -ReportsDir $reportsDir -ModuleName "reporte_disco" -Extension "html"
+    Save-ModuleReportHtml -Report $script:report -ReportFile $reportFileHtml -TituloModulo "Estado del Disco" -ContentHtml $contentHtml -NivelOverride $nivelResultado
 
     #endregion
 
