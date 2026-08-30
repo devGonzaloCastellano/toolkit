@@ -8,7 +8,7 @@
     Al finalizar reinicia los servicios y el sistema queda listo para
     buscar actualizaciones nuevamente.
 .NOTES
-    Version : 3.0.0
+    Version : 3.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -232,6 +232,39 @@ try{
 
     $status = if (@($script:report.errors | Where-Object { $_.severity -eq "ERROR" }).Count -gt 0) { "ERROR" } else { "OK" }
     $script:report = Complete-ModuleReport -Report $script:report -Status $status
+
+    #endregion
+
+    #region GENERACION HTML
+
+    $pasosFallidos = @($script:pasosResultado | Where-Object { -not $_.Exitoso })
+
+    $nivelResultado = if (@($pasosFallidos).Count -gt 0) { "WARNING" } else { "OK" }
+
+    $filasPasos = ""
+    foreach ($p in $script:pasosResultado) {
+        $nivel = if ($p.Exitoso) { "OK" } else { "WARNING" }
+        $texto = if ($p.Exitoso) { "Completado" } else { "No se pudo completar" }
+        $filasPasos += "<tr><td>$($p.Titulo)</td><td>$(New-HtmlBadge -Texto $texto -Nivel $nivel)</td></tr>`n"
+    }
+
+    $contentHtml = @"
+    <h2>Resultado de la reparacion</h2>
+    <table>
+        <tr><th>Paso</th><th>Resultado</th></tr>
+        $filasPasos
+    </table>
+
+    <h2>Proximos pasos</h2>
+    <p style="font-size:13px;">
+        1. Reiniciar el equipo.<br>
+        2. Abrir Windows Update y buscar actualizaciones.<br>
+        3. Si el problema persiste, contactar a su tecnico.
+    </p>
+"@
+
+    $reportFileHtml = Get-ReportFileName -ReportsDir $reportsDir -ModuleName "reparar_windows_update" -Extension "html"
+    Save-ModuleReportHtml -Report $script:report -ReportFile $reportFileHtml -TituloModulo "Reparacion de Windows Update" -ContentHtml $contentHtml -NivelOverride $nivelResultado
 
     #endregion
 
