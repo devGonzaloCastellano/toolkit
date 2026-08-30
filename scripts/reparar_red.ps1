@@ -7,7 +7,7 @@
     y limpieza de configuracion de proxy. Muestra diagnostico antes y
     despues de la reparacion para verificar el resultado.
 .NOTES
-    Version : 3.0.0
+    Version : 3.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -230,6 +230,44 @@ try{
 
     $status = if (@($script:report.errors | Where-Object { $_.severity -eq "ERROR" }).Count -gt 0) { "ERROR" } else { "OK" }
     $script:report = Complete-ModuleReport -Report $script:report -Status $status
+
+    #endregion
+
+    #region GENERACION HTML
+
+    $pasosFallidos = @($script:pasosResultado | Where-Object { -not $_.Exitoso })
+
+    $nivelResultado = if ($estadoPost.Conectividad -ne "OK") { "ERROR" }
+    elseif (@($pasosFallidos).Count -gt 0) { "WARNING" }
+    else { "OK" }
+
+    $textoConectividad = if ($estadoPost.Conectividad -eq "OK") { "Conexion a internet restaurada" } else { "Sin conectividad, se recomienda reiniciar el equipo" }
+    $nivelConectividad  = if ($estadoPost.Conectividad -eq "OK") { "OK" } else { "ERROR" }
+
+    $filasPasos = ""
+    foreach ($p in $script:pasosResultado) {
+        $nivel = if ($p.Exitoso) { "OK" } else { "WARNING" }
+        $texto = if ($p.Exitoso) { "Completado" } else { "No se pudo completar" }
+        $filasPasos += "<tr><td>$($p.Titulo)</td><td>$(New-HtmlBadge -Texto $texto -Nivel $nivel)</td></tr>`n"
+    }
+
+    $contentHtml = @"
+    <h2>Resultado de la reparacion</h2>
+    <p>$(New-HtmlBadge -Texto $textoConectividad -Nivel $nivelConectividad)</p>
+
+    <h2>Pasos ejecutados</h2>
+    <table>
+        <tr><th>Paso</th><th>Resultado</th></tr>
+        $filasPasos
+    </table>
+
+    <p style="font-size:13px; color:#666; margin-top:16px;">
+        Se recomienda reiniciar el equipo para que los cambios de red se apliquen correctamente.
+    </p>
+"@
+
+    $reportFileHtml = Get-ReportFileName -ReportsDir $reportsDir -ModuleName "reparar_red" -Extension "html"
+    Save-ModuleReportHtml -Report $script:report -ReportFile $reportFileHtml -TituloModulo "Reparacion de Red" -ContentHtml $contentHtml -NivelOverride $nivelResultado
 
     #endregion
 
