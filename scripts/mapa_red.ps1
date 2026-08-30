@@ -6,7 +6,7 @@
     activos en el rango local via ping paralelo, muestra la tabla ARP
     con dispositivos recientes y lista recursos compartidos visibles.
 .NOTES
-    Version : 3.0.0
+    Version : 3.1.0
     Proyecto: Portable Windows Toolkit
 #>
 
@@ -338,6 +338,32 @@ try{
 
     #endregion
 
+    #region GENERACION HTML
+
+    $nivelResultado = if ($infoEquipo.EsApipa) { "ERROR" } else { "OK" }
+
+    $textoRed = if ($infoEquipo.EsApipa) {
+        "Este equipo no esta recibiendo una direccion de red valida (posible falla de router o cable)"
+    } else {
+        "Conexion de red funcionando correctamente"
+    }
+
+    $contentHtml = @"
+    <h2>Estado de la red</h2>
+    <p>$(New-HtmlBadge -Texto $textoRed -Nivel $nivelResultado)</p>
+    <div class="metric"><div class="valor">$(@($dispositivos).Count)</div><div class="label">Dispositivos detectados en la red</div></div>
+
+    <p style="font-size:13px; color:#666; margin-top:16px;">
+        El conteo de dispositivos es aproximado: celulares y tablets en reposo suelen no
+        responder a la deteccion, por lo que puede haber mas equipos conectados de los detectados.
+    </p>
+"@
+
+    $reportFileHtml = Get-ReportFileName -ReportsDir $reportsDir -ModuleName "mapa_red" -Extension "html"
+    Save-ModuleReportHtml -Report $script:report -ReportFile $reportFileHtml -TituloModulo "Mapa de Red" -ContentHtml $contentHtml -NivelOverride $nivelResultado
+
+    #endregion
+    
 } catch {
     Write-Log "Error fatal en el modulo: $($_.Exception.Message)" -Level ERROR -LogFile $LogFile
     Add-ReportError -Report $script:report -Message $_.Exception.Message -Severity ERROR -Source TOOLKIT
