@@ -110,12 +110,14 @@ function New-ModuleReport {
     $script:reportStartTime = Get-Date
 
     return @{
-        schemaVersion   = "1.0"
+        schemaVersion   = "1.1"
         toolkitVersion  = $script:ToolkitVersion
         module          = $ModuleName
+        equipo          = $env:COMPUTERNAME
         executionId     = (Get-Date -Format "yyyyMMdd-HHmmss")
         durationSeconds = $null
         status          = "OK"
+        healthScore     = $null
         data            = @{}
         errors          = @()
     }
